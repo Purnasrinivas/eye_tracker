@@ -85,8 +85,6 @@
 
     // Global variables for OpenCV.js Mats and tracking state
     let faceCascade, eyeCascade;
-    
-    // IMPORTANT: Declare Mats globally, but do not initialize them yet.
     let old_gray; 
     let old_points; 
 
@@ -98,21 +96,18 @@
     let isVideoReady = false;
     let areCascadesReady = false; 
 
-    // --- Haar Cascade Download and Initialization ---
+    // --- Haar Cascade Download Utility ---
     async function downloadFile(url, destFileName) {
+        // No need for a defensive check here anymore, as this function is only called
+        // from initializeCascades which is inside cv.onRuntimeInitialized.
         const response = await fetch(url);
         const buffer = await response.arrayBuffer();
-        
-        // FIX: Add a defensive check for cv here. If the code reaches here and cv is undefined, 
-        // it must mean the promise chain or async loading is faulty. Throw an error instead.
-        if (typeof cv === 'undefined') {
-            throw new Error("OpenCV.js object 'cv' is not available during file creation.");
-        }
         
         cv.FS_createDataFile('/', destFileName, new Uint8Array(buffer), true, false, false);
         return destFileName;
     }
 
+    // --- Initialization: Downloads Cascades and sets up Classifiers ---
     async function initializeCascades() {
         try {
             statusElement.textContent = "Camera Active. Downloading Haar Cascades...";
@@ -121,11 +116,6 @@
             const facePath = await downloadFile('https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_frontalface_default.xml', 'haarcascade_face.xml');
             const eyePath = await downloadFile('https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_eye.xml', 'haarcascade_eye.xml');
             
-            // Defensive checks before creating objects
-            if (typeof cv === 'undefined') {
-                 throw new Error("OpenCV.js object 'cv' is not available during cascade initialization.");
-            }
-
             faceCascade = new cv.CascadeClassifier();
             eyeCascade = new cv.CascadeClassifier();
             
@@ -142,6 +132,8 @@
         } catch (e) {
             statusElement.textContent = `FATAL ERROR: Failed to load cascades. ${e.message}`;
             console.error(e);
+            // Re-throw to stop further initialization if cascades fail
+            throw e;
         }
     }
 
@@ -167,9 +159,6 @@
                     canvasOutput.width = FRAME_WIDTH;
                     canvasOutput.height = FRAME_HEIGHT;
                     isVideoReady = true;
-                    
-                    // Start cascade download only after camera is ready
-                    initializeCascades(); 
                     
                     // Start the processing loop
                     window.requestAnimationFrame(processFrame);
@@ -251,19 +240,19 @@
     }
 
     function processFrame() {
-        // Add safety check for the global object before using it, though it should be initialized.
-        if (typeof cv === 'undefined' || !isVideoReady || !areCascadesReady) {
+        // We removed the cv check here because we ensure this is only called after everything is initialized.
+        if (!isVideoReady || !areCascadesReady) {
             window.requestAnimationFrame(processFrame);
             return;
         }
 
-        // 1. Setup Mats
-        const frame = cv.Mat.zeros(FRAME_HEIGHT, FRAME_WIDTH, cv.CV_8UC4);
-        const frameGray = cv.Mat.zeros(FRAME_HEIGHT, FRAME_WIDTH, cv.CV_8UC1);
+        // 1. Setup Mats (These are created anew in every frame and must be cleaned up)
+        const frame = new cv.Mat(FRAME_HEIGHT, FRAME_WIDTH, cv.CV_8UC4); // Reused temp Mat
+        const frameGray = new cv.Mat(FRAME_HEIGHT, FRAME_WIDTH, cv.CV_8UC1); // Reused temp Mat
 
         // Draw the video frame onto a temporary canvas, then read it into the Mat (src)
         context.drawImage(video, 0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-        let src = cv.imread(canvasOutput);
+        let src = cv.imread(canvasOutput); // This creates a new Mat from the canvas
         
         cv.cvtColor(src, frameGray, cv.COLOR_RGBA2GRAY);
 
@@ -375,13 +364,21 @@
     }
 
     // --- OpenCV Initialization Callback ---
-    cv.onRuntimeInitialized = () => {
+    cv.onRuntimeInitialized = async () => {
         // FIX: Initialize global Mat objects here, where 'cv' is guaranteed to be defined.
         old_gray = new cv.Mat();
         old_points = new cv.Mat();
-        
-        // 1. Immediately request camera access, which triggers the permission pop-up.
-        startCamera();
+
+        // 1. Initialize cascades first
+        try {
+            await initializeCascades();
+            
+            // 2. Start camera only after cascades are ready
+            startCamera();
+
+        } catch (e) {
+            console.error("Initialization sequence failed:", e);
+        }
     };
     
 </script>
