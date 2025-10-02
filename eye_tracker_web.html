@@ -85,8 +85,12 @@
 
     // Global variables for OpenCV.js Mats and tracking state
     let faceCascade, eyeCascade;
-    let old_gray = new cv.Mat();
-    let old_points = new cv.Mat();
+    
+    // IMPORTANT FIX: Declare Mats globally, but do not initialize them yet.
+    // Initialization must happen in cv.onRuntimeInitialized().
+    let old_gray; 
+    let old_points; 
+
     let trackingActive = false;
     let blinkCounter = 0;
     let blinkClosedFrames = 0;
@@ -361,6 +365,10 @@
 
     // --- OpenCV Initialization Callback ---
     cv.onRuntimeInitialized = () => {
+        // FIX: Initialize global Mat objects here, where 'cv' is guaranteed to be defined.
+        old_gray = new cv.Mat();
+        old_points = new cv.Mat();
+        
         // 1. Immediately request camera access, which triggers the permission pop-up.
         startCamera();
     };
