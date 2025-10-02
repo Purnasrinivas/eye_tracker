@@ -51,8 +51,8 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            align-items: center; /* Center items horizontally */
+            justify-content: center; /* Center items vertically */
             pointer-events: none; /* Allows clicks to pass through to the canvas/start button */
             z-index: 10;
         }
@@ -394,6 +394,11 @@
             startButton.textContent = "START GAME";
             startButton.style.display = 'block';
             gameOverlay.style.pointerEvents = 'auto'; // Re-enable pointer events for the button
+            
+            // --- FIX: Aligning the button in the center of the overlay ---
+            gameOverlay.style.justifyContent = 'flex-end'; // Push button to the bottom
+            gameOverlay.style.paddingBottom = '80px'; // Add some padding from the bottom
+            // The button itself is centered horizontally because the game-overlay uses align-items: center
 
             // Check if MediaPipe is actively tracking hands
             if (handLandmarks) {
@@ -488,6 +493,10 @@
             startButton.style.display = 'none';
             gameOverlay.style.pointerEvents = 'none';
             gameOverlay.style.backgroundColor = 'transparent';
+            
+            // Reset overlay alignment for game use
+            gameOverlay.style.justifyContent = 'center';
+            gameOverlay.style.paddingBottom = '0px';
 
 
             // Clear any existing bubbles from the start screen
