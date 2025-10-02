@@ -27,6 +27,7 @@
             box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
             /* Remove background-color here so the video drawn underneath is visible */
             background-color: transparent; 
+            position: relative; /* Needed for overlay positioning */
         }
         /* Style for the start button */
         #start-button {
@@ -40,6 +41,22 @@
         #start-button:hover {
             transform: scale(1.05);
         }
+
+        /* NEW: Game Overlay Styling */
+        #game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* Allows clicks to pass through to the canvas/start button */
+            z-index: 10;
+        }
+
     </style>
 </head>
 <body class="p-4">
@@ -64,11 +81,18 @@
         <!-- Video element for camera feed (hidden from display, but stream is accessible) -->
         <video id="webcam" autoplay playsinline style="display: none;"></video>
         
-        <!-- Canvas for rendering the game overlay -->
-        <canvas id="game-canvas" width="1024" height="576"></canvas>
+        <!-- Canvas Container -->
+        <div class="relative inline-block">
+            <!-- Canvas for rendering the game overlay -->
+            <canvas id="game-canvas" width="1024" height="576"></canvas>
+
+            <!-- Overlay for Start/Game Over screen -->
+            <div id="game-overlay">
+                <!-- Start Button Overlay -->
+                <button id="start-button" class="bg-green-500 hover:bg-green-600 text-white" style="display:none; pointer-events: auto;">Start Game</button>
+            </div>
+        </div>
         
-        <!-- Start Button Overlay -->
-        <button id="start-button" class="bg-green-500 hover:bg-green-600 text-white mt-4" style="display:none; position: absolute;">Start Game</button>
     </div>
 
     <script>
@@ -108,6 +132,7 @@
         const statusMessage = document.getElementById('status-message');
         const missedDisplay = document.getElementById('missed-display'); // New DOM element
         const startButton = document.getElementById('start-button');
+        const gameOverlay = document.getElementById('game-overlay');
 
         // --- Physics Engine (Matter.js) Setup ---
         const Engine = Matter.Engine,
@@ -201,14 +226,21 @@
             isGameOver = true;
             clearInterval(spawnIntervalId);
             
-            // Re-center button on canvas for Retry functionality
-            const canvasRect = canvasElement.getBoundingClientRect();
-            startButton.style.top = `${canvasRect.top + canvasRect.height / 2 + 50}px`;
-            startButton.style.left = `${canvasRect.left + canvasRect.width / 2 - startButton.offsetWidth / 2}px`;
+            // Draw Game Over Text
+            canvasCtx.font = "bold 60px Inter";
+            canvasCtx.fillStyle = 'rgba(255, 50, 50, 0.9)';
+            canvasCtx.textAlign = 'center';
+            canvasCtx.fillText("GAME OVER", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            canvasCtx.fillText(`Final Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 70);
+            
+            // Display Retry Button
             startButton.textContent = "RETRY";
             startButton.onclick = () => window.location.reload(); // Simple retry function
             startButton.style.display = 'block';
-
+            startButton.style.position = 'relative'; // Ensure button is centered within the overlay div
+            
+            gameOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)'; // Apply dark overlay
+            gameOverlay.style.pointerEvents = 'auto';
             statusMessage.textContent = "GAME OVER! Three bubbles missed. Click RETRY to play again.";
         }
 
@@ -358,12 +390,10 @@
             canvasCtx.fillStyle = '#FBBF24'; // Yellow
             canvasCtx.fillText("Click START when you are ready!", CANVAS_WIDTH / 2, lineY);
 
-
-            // Re-center button on instruction screen
-            const canvasRect = canvasElement.getBoundingClientRect();
-            startButton.style.top = `${canvasRect.top + CANVAS_HEIGHT - 120}px`;
-            startButton.style.left = `${canvasRect.left + CANVAS_WIDTH / 2 - startButton.offsetWidth / 2}px`;
+            // Display Start Button via the overlay div
+            startButton.textContent = "START GAME";
             startButton.style.display = 'block';
+            gameOverlay.style.pointerEvents = 'auto'; // Re-enable pointer events for the button
 
             // Check if MediaPipe is actively tracking hands
             if (handLandmarks) {
@@ -454,8 +484,11 @@
         // --- Initialization and Camera ---
         
         function startGame() {
-            // Hide the start button
+            // Hide overlay elements
             startButton.style.display = 'none';
+            gameOverlay.style.pointerEvents = 'none';
+            gameOverlay.style.backgroundColor = 'transparent';
+
 
             // Clear any existing bubbles from the start screen
             bubbles.forEach(bubble => Composite.remove(world, bubble));
@@ -508,8 +541,7 @@
                 sendToMediaPipe();
                 
                 // Attach start button functionality only after camera is ready
-                startButton.onclick = startGame;
-
+                // Note: The button's onclick is now set in the DOMContentLoaded block
             } catch (err) {
                 statusMessage.textContent = `Camera Error: ${err.name}. Please ensure camera access is granted.`;
                 console.error("Camera access denied or device error:", err);
@@ -530,7 +562,8 @@
         
         document.addEventListener('DOMContentLoaded', () => {
             statusMessage.textContent = "Checking library readiness...";
-            
+            startButton.onclick = startGame; // Set button handler
+
             // Check for MediaPipe and Matter.js readiness
             if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
                 statusMessage.textContent = "Libraries loaded. Starting camera...";
