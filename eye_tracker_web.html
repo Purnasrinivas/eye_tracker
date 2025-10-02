@@ -86,8 +86,7 @@
     // Global variables for OpenCV.js Mats and tracking state
     let faceCascade, eyeCascade;
     
-    // IMPORTANT FIX: Declare Mats globally, but do not initialize them yet.
-    // Initialization must happen in cv.onRuntimeInitialized().
+    // IMPORTANT: Declare Mats globally, but do not initialize them yet.
     let old_gray; 
     let old_points; 
 
@@ -103,6 +102,13 @@
     async function downloadFile(url, destFileName) {
         const response = await fetch(url);
         const buffer = await response.arrayBuffer();
+        
+        // FIX: Add a defensive check for cv here. If the code reaches here and cv is undefined, 
+        // it must mean the promise chain or async loading is faulty. Throw an error instead.
+        if (typeof cv === 'undefined') {
+            throw new Error("OpenCV.js object 'cv' is not available during file creation.");
+        }
+        
         cv.FS_createDataFile('/', destFileName, new Uint8Array(buffer), true, false, false);
         return destFileName;
     }
@@ -115,6 +121,11 @@
             const facePath = await downloadFile('https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_frontalface_default.xml', 'haarcascade_face.xml');
             const eyePath = await downloadFile('https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_eye.xml', 'haarcascade_eye.xml');
             
+            // Defensive checks before creating objects
+            if (typeof cv === 'undefined') {
+                 throw new Error("OpenCV.js object 'cv' is not available during cascade initialization.");
+            }
+
             faceCascade = new cv.CascadeClassifier();
             eyeCascade = new cv.CascadeClassifier();
             
@@ -173,7 +184,7 @@
     // --- Core CV Functions ---
 
     function detectAndInitializeEyes(frame, frameGray, frameColor) {
-        // NOTE: Mats must be created inside the function or reused carefully to avoid memory leaks.
+        // All Mats and classifiers are guaranteed to be initialized here if areCascadesReady is true.
         const faces = new cv.RectVector();
         const eyes = new cv.RectVector();
         const minSize = new cv.Size(100, 100);
@@ -240,8 +251,8 @@
     }
 
     function processFrame() {
-        if (!isVideoReady || !areCascadesReady) {
-            // Processing loop waits until both video stream and cascades are ready.
+        // Add safety check for the global object before using it, though it should be initialized.
+        if (typeof cv === 'undefined' || !isVideoReady || !areCascadesReady) {
             window.requestAnimationFrame(processFrame);
             return;
         }
