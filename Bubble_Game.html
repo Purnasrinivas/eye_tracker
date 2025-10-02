@@ -41,6 +41,8 @@
         <!-- Display Score and Instructions -->
         <div class="flex justify-between items-center mb-4 p-3 bg-gray-700 rounded-lg shadow-lg">
             <div id="score-display" class="text-3xl font-bold text-yellow-300">Score: 0</div>
+            <!-- NEW MISSED COUNT DISPLAY -->
+            <div id="missed-display" class="text-2xl font-semibold text-red-400">Missed: 0 / 3</div>
             <div class="text-left text-sm text-gray-300">
                 <p>👊 **POP:** Closed fist + Index finger near bubble.</p>
                 <p>✋ **PUSH:** Open palm to move bubbles.</p>
@@ -69,6 +71,12 @@
         let lastSpawnTime = Date.now();
         let handLandmarks = null;
         let isCameraActive = false;
+        
+        // NEW GAME OVER STATE
+        let missedBubblesCount = 0;
+        const maxMissedBubbles = 3;
+        let isGameOver = false;
+        let spawnIntervalId = null;
 
         // --- DOM Elements ---
         const videoElement = document.getElementById('webcam');
@@ -76,9 +84,11 @@
         const canvasCtx = canvasElement.getContext('2d');
         const scoreDisplay = document.getElementById('score-display');
         const statusMessage = document.getElementById('status-message');
+        const missedDisplay = document.getElementById('missed-display'); // New DOM element
 
         // --- Physics Engine (Matter.js) Setup ---
         const Engine = Matter.Engine,
+              Events = Matter.Events, // Import Events
               Render = Matter.Render, 
               Runner = Matter.Runner,
               Bodies = Matter.Bodies,
@@ -87,24 +97,66 @@
 
         const engine = Engine.create();
         const world = engine.world;
-        engine.gravity.y = -0.05; // Bubbles float up (Matter.js uses 0 to 1 scale for gravity)
+        // Set gravity to negative so bubbles float upwards toward the miss zone (top)
+        engine.gravity.y = -0.05; 
         
         // Add boundaries (Ground and Walls)
-        const thickness = 20;
+        const thickness = 30; 
+        
+        // Define bodies outside the array for access in event listeners
+        const floor = Bodies.rectangle(CANVAS_WIDTH / 2, CANVAS_HEIGHT - thickness / 2, CANVAS_WIDTH, thickness, { 
+            isStatic: true, 
+            label: 'Floor', 
+            id: 'floor', // Add unique ID for collision detection
+            render: { fillStyle: '#4a5568' } // Gray floor boundary
+        });
+        const ceiling = Bodies.rectangle(CANVAS_WIDTH / 2, thickness / 2, CANVAS_WIDTH, thickness, { 
+            isStatic: true, 
+            label: 'Ceiling', 
+            id: 'ceiling', // Add unique ID for collision detection
+            render: { fillStyle: '#ff0000' } // Red miss zone
+        });
+        
         const walls = [
-            // Ground (bottom of the OpenCV window = top of Matter.js world)
-            Bodies.rectangle(CANVAS_WIDTH / 2, thickness / 2, CANVAS_WIDTH, thickness, { 
-                isStatic: true, label: 'Ground', render: { fillStyle: '#00cc00' } 
-            }),
-            // Top (to delete bubbles)
-            Bodies.rectangle(CANVAS_WIDTH / 2, CANVAS_HEIGHT - thickness / 2, CANVAS_WIDTH, thickness, { 
-                isStatic: true, label: 'Ceiling', render: { fillStyle: '#00cc00' } 
-            }),
+            floor,
+            ceiling,
             // Walls
             Bodies.rectangle(thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
             Bodies.rectangle(CANVAS_WIDTH - thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
         ];
         Composite.add(world, walls);
+        
+        // --- Matter.js Collision Handling ---
+        Events.on(engine, 'collisionStart', (event) => {
+            if (isGameOver) return;
+
+            const pairs = event.pairs;
+            
+            pairs.forEach(pair => {
+                const bodyA = pair.bodyA;
+                const bodyB = pair.bodyB;
+                
+                let bubbleBody = null;
+                // We only care about the floor boundary collision
+                if (bodyA.label === 'Bubble' && bodyB.id === 'ceiling') {
+                    bubbleBody = bodyA;
+                } else if (bodyB.label === 'Bubble' && bodyA.id === 'ceiling') {
+                    bubbleBody = bodyB;
+                }
+
+                // If a bubble hits the ceiling/miss zone, count it as a miss and pop it
+                if (bubbleBody) {
+                    missedBubblesCount++;
+                    missedDisplay.textContent = `Missed: ${missedBubblesCount} / ${maxMissedBubbles}`;
+                    removeBubble(bubbleBody); // Remove it immediately to prevent stacking
+
+                    if (missedBubblesCount >= maxMissedBubbles) {
+                        gameOver();
+                    }
+                }
+            });
+        });
+
 
         // --- MediaPipe Hands Setup ---
         const hands = new Hands({
@@ -123,23 +175,36 @@
             // Store normalized landmarks globally
             handLandmarks = results.multiHandLandmarks;
         }
+        
+        function gameOver() {
+            isGameOver = true;
+            clearInterval(spawnIntervalId);
+            statusMessage.textContent = "GAME OVER! Three bubbles missed. Refresh the page to Retry.";
+            
+            // Draw game over text immediately
+            canvasCtx.font = "bold 60px Inter";
+            canvasCtx.fillStyle = 'rgba(255, 50, 50, 0.9)';
+            canvasCtx.textAlign = 'center';
+            canvasCtx.fillText("GAME OVER", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            canvasCtx.fillText(`Final Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 70);
+        }
 
         // --- Game Logic ---
 
         function createBubble() {
             const radius = Math.random() * (BUBBLE_RADIUS_MAX - BUBBLE_RADIUS_MIN) + BUBBLE_RADIUS_MIN;
-            // Spawn point at the bottom of the screen (top of the Matter.js world)
+            // Spawn point at the bottom of the screen (high Y in Matter.js world)
             const x = CANVAS_WIDTH * (0.2 + Math.random() * 0.6);
             const y = CANVAS_HEIGHT - radius - 5; 
             
             const bubble = Bodies.circle(x, y, radius, {
                 restitution: 0.9,
                 friction: 0.001,
-                density: 0.0001, // Very low density for buoyancy
+                density: 0.0001, 
                 label: 'Bubble',
                 plugin: { 
-                    bubble: true, // Custom property to identify bubbles
-                    radius: radius // Store radius for drawing
+                    bubble: true, 
+                    radius: radius 
                 }
             });
 
@@ -159,8 +224,9 @@
                 // MediaPipe gives normalized (0 to 1) coordinates.
                 if (!landmarks) return;
 
-                // Scale normalized landmarks to canvas coordinates
-                const tipX = landmarks[8].x * CANVAS_WIDTH; // Index Finger Tip (8)
+                // --- MIRRORING FIX: Apply 1 - X transformation ---
+                const standardTipX = landmarks[8].x;
+                const tipX = CANVAS_WIDTH * (1 - standardTipX); // Mirrored X
                 const tipY = landmarks[8].y * CANVAS_HEIGHT;
 
                 // Check for POP Gesture: Index Tip (8) is *above* Index MCP (5)
@@ -179,7 +245,7 @@
 
                     // Check for bubble contact
                     bubbles.forEach(bubble => {
-                        // Matter.js Y is inverted for drawing (Y=0 is bottom in physics, Y=0 is top in canvas)
+                        // Matter.js Y is inverted for drawing (Y=0 is top in physics, Y=0 is top in canvas)
                         const bubbleX = bubble.position.x;
                         const bubbleY = CANVAS_HEIGHT - bubble.position.y;
                         const radius = bubble.plugin.radius;
@@ -196,7 +262,9 @@
                 
                 // --- Gesture: PUSH/MOVE (Open Palm) ---
                 else if (landmarks[12].y < landmarks[9].y) { // Simple check for open hand
-                    const palmX = landmarks[0].x * CANVAS_WIDTH; // Wrist (0)
+                    // --- MIRRORING FIX: Apply 1 - X transformation ---
+                    const standardPalmX = landmarks[0].x;
+                    const palmX = CANVAS_WIDTH * (1 - standardPalmX); // Mirrored X
                     const palmY = landmarks[0].y * CANVAS_HEIGHT;
 
                     // Draw Yellow Circle for Push Gesture
@@ -232,6 +300,12 @@
 
         function drawGame() {
             
+            // NEW: Check Game Over State
+            if (isGameOver) {
+                gameOver(); // Redraws the Game Over screen
+                return;
+            }
+            
             // 1. Draw the live video feed as the background (Mirrored for user experience)
             canvasCtx.save();
             canvasCtx.scale(-1, 1);
@@ -244,8 +318,11 @@
             canvasCtx.fillStyle = 'rgba(100, 255, 255, 0.5)'; // Light blue translucent
             canvasCtx.strokeStyle = 'rgba(100, 255, 255, 1)';
             canvasCtx.lineWidth = 2;
-
-            bubbles.forEach(bubble => {
+            
+            // Iterate backwards to safely remove elements
+            // We no longer check for missed bubbles here, as collision events handle it
+            for (let i = bubbles.length - 1; i >= 0; i--) {
+                const bubble = bubbles[i];
                 const x = bubble.position.x;
                 // Convert Matter.js Y (bottom-up) to Canvas Y (top-down)
                 const y = CANVAS_HEIGHT - bubble.position.y; 
@@ -255,21 +332,20 @@
                 canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
                 canvasCtx.fill();
                 canvasCtx.stroke();
-
-                // Check if bubble reaches the top (lost point)
-                if (bubble.position.y > CANVAS_HEIGHT - thickness) {
-                    removeBubble(bubble);
-                }
-            });
-
+            }
+            
             // 3. Draw Hand Gestures and Check for Pops
             popBubbleCheck(handLandmarks);
 
-            // Draw boundaries (optional, mainly for debugging)
+            // Draw boundaries 
+            
+            // Draw the ground/floor zone (bottom) in GRAY
             canvasCtx.fillStyle = '#4a5568';
-            // Draw a thin line for the ground and top to show the boundary
-            canvasCtx.fillRect(0, CANVAS_HEIGHT - thickness, CANVAS_WIDTH, thickness); 
-            canvasCtx.fillRect(0, 0, CANVAS_WIDTH, thickness);
+            canvasCtx.fillRect(0, CANVAS_HEIGHT - thickness, CANVAS_WIDTH, thickness);
+
+            // Draw the ceiling/miss zone (top) in RED 
+            canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.5)'; 
+            canvasCtx.fillRect(0, 0, CANVAS_WIDTH, thickness); 
 
             // 4. Update Physics Engine
             Engine.update(engine, 1000 / 60); 
@@ -305,7 +381,7 @@
                 canvasElement.height = CANVAS_HEIGHT;
 
                 // Start physics and game loops
-                setInterval(createBubble, SPAWN_INTERVAL);
+                spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL); // Store interval ID
                 drawGame(); // Starts the continuous drawing loop
                 
                 // Start MediaPipe processing on the video stream
@@ -329,17 +405,27 @@
 
         // --- Entry Point ---
         
-        // Ensure Matter.js and MediaPipe are loaded before starting
-        window.onload = function() {
-            // Check for MediaPipe and Matter.js readiness (simplified check)
+        // This streamlined entry point requests camera access immediately.
+        document.addEventListener('DOMContentLoaded', () => {
+            statusMessage.textContent = "Checking library readiness...";
+            
+            // Check for MediaPipe and Matter.js readiness
             if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
                 statusMessage.textContent = "Libraries loaded. Starting camera...";
+                // This line triggers the camera permission pop-up immediately
                 startCamera();
             } else {
-                statusMessage.textContent = "Error loading external libraries. Check console.";
+                // Set a short delay to allow async script loading to complete
+                setTimeout(() => {
+                    if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
+                        statusMessage.textContent = "Libraries loaded after delay. Starting camera...";
+                        startCamera();
+                    } else {
+                        statusMessage.textContent = "Fatal Error: External libraries failed to load.";
+                    }
+                }, 100); 
             }
-        };
-
+        });
     </script>
 </body>
 </html>
