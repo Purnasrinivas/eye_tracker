@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture Bubble Pop Game (Web)</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load MediaPipe Hands for gesture tracking -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <!-- Load Matter.js for physics simulation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        /* Ensure the body takes full viewport height for centering */
+        body {
+            height: 100vh;
+            background-color: #1a202c; /* Dark background */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style the canvas to ensure it is visible and centered */
+        #game-canvas {
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+            /* Remove background-color here so the video drawn underneath is visible */
+            background-color: transparent; 
+        }
+    </style>
+</head>
+<body class="p-4">
+
+    <div class="max-w-4xl w-full text-white text-center">
+        <h1 class="text-4xl font-extrabold mb-2 text-teal-400">Gesture Bubble Pop (Web)</h1>
+        <p class="text-sm mb-6 text-gray-400" id="status-message">
+            Loading MediaPipe and Physics Engine...
+        </p>
+
+        <!-- Display Score and Instructions -->
+        <div class="flex justify-between items-center mb-4 p-3 bg-gray-700 rounded-lg shadow-lg">
+            <div id="score-display" class="text-3xl font-bold text-yellow-300">Score: 0</div>
+            <div class="text-left text-sm text-gray-300">
+                <p>👊 **POP:** Closed fist + Index finger near bubble.</p>
+                <p>✋ **PUSH:** Open palm to move bubbles.</p>
+            </div>
+        </div>
+        
+        <!-- Video element for camera feed (hidden from display, but stream is accessible) -->
+        <video id="webcam" autoplay playsinline style="display: none;"></video>
+        
+        <!-- Canvas for rendering the game overlay -->
+        <canvas id="game-canvas" width="1024" height="576"></canvas>
+    </div>
+
+    <script>
+        // --- Global Config ---
+        const CANVAS_WIDTH = 1024;
+        const CANVAS_HEIGHT = 576;
+        const SPAWN_INTERVAL = 1500; // ms
+        const BUBBLE_RADIUS_MIN = 20;
+        const BUBBLE_RADIUS_MAX = 40;
+        const POP_DISTANCE_THRESHOLD = 30; // Max distance in pixels to pop
+
+        // --- Game State ---
+        let score = 0;
+        let bubbles = [];
+        let lastSpawnTime = Date.now();
+        let handLandmarks = null;
+        let isCameraActive = false;
+
+        // --- DOM Elements ---
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('game-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const statusMessage = document.getElementById('status-message');
+
+        // --- Physics Engine (Matter.js) Setup ---
+        const Engine = Matter.Engine,
+              Render = Matter.Render, 
+              Runner = Matter.Runner,
+              Bodies = Matter.Bodies,
+              Composite = Matter.Composite,
+              Vector = Matter.Vector;
+
+        const engine = Engine.create();
+        const world = engine.world;
+        engine.gravity.y = -0.05; // Bubbles float up (Matter.js uses 0 to 1 scale for gravity)
+        
+        // Add boundaries (Ground and Walls)
+        const thickness = 20;
+        const walls = [
+            // Ground (bottom of the OpenCV window = top of Matter.js world)
+            Bodies.rectangle(CANVAS_WIDTH / 2, thickness / 2, CANVAS_WIDTH, thickness, { 
+                isStatic: true, label: 'Ground', render: { fillStyle: '#00cc00' } 
+            }),
+            // Top (to delete bubbles)
+            Bodies.rectangle(CANVAS_WIDTH / 2, CANVAS_HEIGHT - thickness / 2, CANVAS_WIDTH, thickness, { 
+                isStatic: true, label: 'Ceiling', render: { fillStyle: '#00cc00' } 
+            }),
+            // Walls
+            Bodies.rectangle(thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
+            Bodies.rectangle(CANVAS_WIDTH - thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
+        ];
+        Composite.add(world, walls);
+
+        // --- MediaPipe Hands Setup ---
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        function onResults(results) {
+            // Store normalized landmarks globally
+            handLandmarks = results.multiHandLandmarks;
+        }
+
+        // --- Game Logic ---
+
+        function createBubble() {
+            const radius = Math.random() * (BUBBLE_RADIUS_MAX - BUBBLE_RADIUS_MIN) + BUBBLE_RADIUS_MIN;
+            // Spawn point at the bottom of the screen (top of the Matter.js world)
+            const x = CANVAS_WIDTH * (0.2 + Math.random() * 0.6);
+            const y = CANVAS_HEIGHT - radius - 5; 
+            
+            const bubble = Bodies.circle(x, y, radius, {
+                restitution: 0.9,
+                friction: 0.001,
+                density: 0.0001, // Very low density for buoyancy
+                label: 'Bubble',
+                plugin: { 
+                    bubble: true, // Custom property to identify bubbles
+                    radius: radius // Store radius for drawing
+                }
+            });
+
+            Composite.add(world, bubble);
+            bubbles.push(bubble);
+        }
+
+        function removeBubble(bubble) {
+            Composite.remove(world, bubble);
+            bubbles = bubbles.filter(b => b.id !== bubble.id);
+        }
+
+        function popBubbleCheck(handLandmarks) {
+            if (!handLandmarks) return;
+
+            handLandmarks.forEach(landmarks => {
+                // MediaPipe gives normalized (0 to 1) coordinates.
+                if (!landmarks) return;
+
+                // Scale normalized landmarks to canvas coordinates
+                const tipX = landmarks[8].x * CANVAS_WIDTH; // Index Finger Tip (8)
+                const tipY = landmarks[8].y * CANVAS_HEIGHT;
+
+                // Check for POP Gesture: Index Tip (8) is *above* Index MCP (5)
+                const isPopGesture = landmarks[8].y < landmarks[5].y;
+
+                // Check for Closed Fist: Middle finger tip (12) is below middle finger MCP (9)
+                const isClosed = landmarks[12].y > landmarks[9].y && landmarks[16].y > landmarks[13].y;
+                
+                if (isPopGesture && isClosed) {
+                    // Draw Red Circle for Pop Gesture
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(tipX, tipY, 15, 0, 2 * Math.PI);
+                    canvasCtx.strokeStyle = 'red';
+                    canvasCtx.lineWidth = 3;
+                    canvasCtx.stroke();
+
+                    // Check for bubble contact
+                    bubbles.forEach(bubble => {
+                        // Matter.js Y is inverted for drawing (Y=0 is bottom in physics, Y=0 is top in canvas)
+                        const bubbleX = bubble.position.x;
+                        const bubbleY = CANVAS_HEIGHT - bubble.position.y;
+                        const radius = bubble.plugin.radius;
+
+                        const distance = Math.hypot(tipX - bubbleX, tipY - bubbleY);
+
+                        if (distance < radius + POP_DISTANCE_THRESHOLD) {
+                            score++;
+                            scoreDisplay.textContent = `Score: ${score}`;
+                            removeBubble(bubble);
+                        }
+                    });
+                } 
+                
+                // --- Gesture: PUSH/MOVE (Open Palm) ---
+                else if (landmarks[12].y < landmarks[9].y) { // Simple check for open hand
+                    const palmX = landmarks[0].x * CANVAS_WIDTH; // Wrist (0)
+                    const palmY = landmarks[0].y * CANVAS_HEIGHT;
+
+                    // Draw Yellow Circle for Push Gesture
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(palmX, palmY, 20, 0, 2 * Math.PI);
+                    canvasCtx.strokeStyle = 'yellow';
+                    canvasCtx.lineWidth = 3;
+                    canvasCtx.stroke();
+
+                    // Apply force to bubbles near the palm
+                    bubbles.forEach(bubble => {
+                        const bubblePos = { x: bubble.position.x, y: CANVAS_HEIGHT - bubble.position.y };
+                        const palmPos = { x: palmX, y: palmY };
+                        const radius = bubble.plugin.radius;
+
+                        const distance = Math.hypot(palmPos.x - bubblePos.x, palmPos.y - bubblePos.y);
+
+                        if (distance < radius + 50) {
+                            // Calculate simple push force away from the palm
+                            const dx = bubblePos.x - palmPos.x;
+                            const dy = bubblePos.y - palmPos.y;
+                            
+                            // Matter.js force vector must be in the physics coordinate system (Y inverted)
+                            const force = Vector.mult({ x: dx, y: -dy }, 0.00005); 
+                            Matter.Body.applyForce(bubble, bubble.position, force);
+                        }
+                    });
+                }
+            });
+        }
+
+        // --- Rendering Loop ---
+
+        function drawGame() {
+            
+            // 1. Draw the live video feed as the background (Mirrored for user experience)
+            canvasCtx.save();
+            canvasCtx.scale(-1, 1);
+            // Translate origin to the right side of the canvas before drawing the flipped image
+            canvasCtx.translate(-CANVAS_WIDTH, 0); 
+            canvasCtx.drawImage(videoElement, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            canvasCtx.restore(); // Restore context state
+
+            // 2. Draw Bubbles
+            canvasCtx.fillStyle = 'rgba(100, 255, 255, 0.5)'; // Light blue translucent
+            canvasCtx.strokeStyle = 'rgba(100, 255, 255, 1)';
+            canvasCtx.lineWidth = 2;
+
+            bubbles.forEach(bubble => {
+                const x = bubble.position.x;
+                // Convert Matter.js Y (bottom-up) to Canvas Y (top-down)
+                const y = CANVAS_HEIGHT - bubble.position.y; 
+                const radius = bubble.plugin.radius;
+
+                canvasCtx.beginPath();
+                canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
+                canvasCtx.fill();
+                canvasCtx.stroke();
+
+                // Check if bubble reaches the top (lost point)
+                if (bubble.position.y > CANVAS_HEIGHT - thickness) {
+                    removeBubble(bubble);
+                }
+            });
+
+            // 3. Draw Hand Gestures and Check for Pops
+            popBubbleCheck(handLandmarks);
+
+            // Draw boundaries (optional, mainly for debugging)
+            canvasCtx.fillStyle = '#4a5568';
+            // Draw a thin line for the ground and top to show the boundary
+            canvasCtx.fillRect(0, CANVAS_HEIGHT - thickness, CANVAS_WIDTH, thickness); 
+            canvasCtx.fillRect(0, 0, CANVAS_WIDTH, thickness);
+
+            // 4. Update Physics Engine
+            Engine.update(engine, 1000 / 60); 
+
+            // 5. Request next frame
+            requestAnimationFrame(drawGame);
+        }
+
+        // --- Initialization and Camera ---
+
+        async function startCamera() {
+            statusMessage.textContent = "Requesting camera permission...";
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    'video': {
+                        facingMode: 'user',
+                        width: { ideal: CANVAS_WIDTH },
+                        height: { ideal: CANVAS_HEIGHT }
+                    },
+                });
+                videoElement.srcObject = stream;
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = resolve;
+                });
+
+                // Start the MediaPipe video processing
+                videoElement.play();
+                isCameraActive = true;
+                statusMessage.textContent = "Camera active. Running gesture detection...";
+                
+                // Set canvas size to match video
+                canvasElement.width = CANVAS_WIDTH;
+                canvasElement.height = CANVAS_HEIGHT;
+
+                // Start physics and game loops
+                setInterval(createBubble, SPAWN_INTERVAL);
+                drawGame(); // Starts the continuous drawing loop
+                
+                // Start MediaPipe processing on the video stream
+                sendToMediaPipe();
+
+            } catch (err) {
+                statusMessage.textContent = `Camera Error: ${err.name}. Please ensure camera access is granted.`;
+                console.error("Camera access denied or device error:", err);
+            }
+        }
+
+        async function sendToMediaPipe() {
+            if (!isCameraActive) return;
+
+            // MediaPipe requires the video stream to be constantly fed to it
+            await hands.send({ image: videoElement });
+            
+            // Schedule the next frame processing immediately
+            requestAnimationFrame(sendToMediaPipe);
+        }
+
+        // --- Entry Point ---
+        
+        // Ensure Matter.js and MediaPipe are loaded before starting
+        window.onload = function() {
+            // Check for MediaPipe and Matter.js readiness (simplified check)
+            if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
+                statusMessage.textContent = "Libraries loaded. Starting camera...";
+                startCamera();
+            } else {
+                statusMessage.textContent = "Error loading external libraries. Check console.";
+            }
+        };
+
+    </script>
+</body>
+</html>
