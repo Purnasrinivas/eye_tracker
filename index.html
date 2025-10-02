@@ -99,9 +99,10 @@
         // --- Global Config ---
         const CANVAS_WIDTH = 1024;
         const CANVAS_HEIGHT = 576;
-        let SPAWN_INTERVAL = 1500; // ms (Initial interval)
-        const FAST_SPAWN_INTERVAL = 750; // ms (After 30 seconds)
-        const DIFFICULTY_THRESHOLD_TIME = 30000; // 30 seconds
+        let SPAWN_INTERVAL = 1500; // ms (Initial interval: 1.5 seconds)
+        const MIN_SPAWN_INTERVAL = 500; // ms (Fastest possible interval)
+        const DIFFICULTY_REDUCTION = 100; // ms to reduce interval by per step
+        const DIFFICULTY_STEP_TIME = 10000; // 10 seconds
         const BUBBLE_RADIUS_MIN = 20;
         const BUBBLE_RADIUS_MAX = 40;
         const POP_DISTANCE_THRESHOLD = 30; // Max distance in pixels to pop
@@ -122,8 +123,10 @@
         let isGameOver = false;
         let spawnIntervalId = null;
         let startTime = null; // To track game duration
-        let difficultyIncreased = false; // Flag to ensure difficulty only increases once
-
+        
+        // Difficulty tracking
+        let lastDifficultyIncreaseTime = null; 
+        
         // --- DOM Elements ---
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('game-canvas');
@@ -219,7 +222,7 @@
 
         function onResults(results) {
             // Store normalized landmarks globally
-            handLandmarks = results.multiHandLandmarks;
+            handLandmarks = results.multiHandHandLandmarks;
         }
         
         function gameOver() {
@@ -376,7 +379,7 @@
             const lineSpacing = 30;
 
             canvasCtx.fillStyle = '#6EE7B7'; // Teal
-            canvasCtx.fillText("Phase 1: Easy Start (First 30 seconds)", 200, lineY);
+            canvasCtx.fillText("Phase 1: Easy Start (Difficulty increases every 10 seconds)", 200, lineY);
             lineY += lineSpacing;
 
             canvasCtx.fillStyle = 'white';
@@ -430,13 +433,22 @@
                 return;
             }
 
-            // --- DIFFICULTY CHECK ---
-            if (!difficultyIncreased && startTime && Date.now() - startTime > DIFFICULTY_THRESHOLD_TIME) {
-                SPAWN_INTERVAL = FAST_SPAWN_INTERVAL; // Reduce interval to half (increase spawn rate)
-                difficultyIncreased = true;
-                clearInterval(spawnIntervalId);
-                spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL);
-                statusMessage.textContent = "DIFFICULTY INCREASED! Bubbles are spawning faster!";
+            // --- DIFFICULTY CHECK (Every 10 seconds) ---
+            const currentTime = Date.now();
+            if (lastDifficultyIncreaseTime && currentTime - lastDifficultyIncreaseTime > DIFFICULTY_STEP_TIME) {
+                // Increase difficulty only if we haven't hit the minimum interval
+                if (SPAWN_INTERVAL > MIN_SPAWN_INTERVAL) {
+                    SPAWN_INTERVAL = Math.max(MIN_SPAWN_INTERVAL, SPAWN_INTERVAL - DIFFICULTY_REDUCTION); // Reduce interval
+                    
+                    // Restart interval with the new, faster rate
+                    clearInterval(spawnIntervalId);
+                    spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL);
+                    
+                    lastDifficultyIncreaseTime = currentTime; // Reset the timer for the next step
+                    
+                    // Update Status Message
+                    statusMessage.textContent = `DIFFICULTY STEP UP! Spawn Rate: ${SPAWN_INTERVAL}ms`;
+                }
             }
             
             // 1. Draw the live video feed as the background (Mirrored for user experience)
@@ -507,14 +519,14 @@
             score = 0;
             missedBubblesCount = 0;
             isGameOver = false;
-            difficultyIncreased = false;
-            SPAWN_INTERVAL = 1500;
+            SPAWN_INTERVAL = 1500; // Reset to initial slow rate
             scoreDisplay.textContent = `Score: 0`;
             missedDisplay.textContent = `Missed: 0 / ${maxMissedBubbles}`;
             statusMessage.textContent = "Camera active. Running gesture detection...";
             
             // Start physics and game loops
             startTime = Date.now();
+            lastDifficultyIncreaseTime = Date.now(); // Start timer now
             spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL);
             isGameStarted = true;
         }
