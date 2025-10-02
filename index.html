@@ -222,7 +222,7 @@
 
         function onResults(results) {
             // Store normalized landmarks globally
-            handLandmarks = results.multiHandHandLandmarks;
+            handLandmarks = results.multiHandLandmarks;
         }
         
         function gameOver() {
@@ -285,13 +285,18 @@
                 const tipX = CANVAS_WIDTH * (1 - standardTipX); // Mirrored X
                 const tipY = landmarks[8].y * CANVAS_HEIGHT;
 
-                // Check for POP Gesture: Index Tip (8) is *above* Index MCP (5)
-                const isPopGesture = landmarks[8].y < landmarks[5].y;
-
-                // Check for Closed Fist: Middle finger tip (12) is below middle finger MCP (9)
-                const isClosed = landmarks[12].y > landmarks[9].y && landmarks[16].y > landmarks[13].y;
+                // Index Tip (8) is above Index MCP (5)
+                const isIndexExtended = landmarks[8].y < landmarks[5].y;
                 
-                if (isPopGesture && isClosed) {
+                // Check if all fingers are retracted (i.e., closed fist, not pointing)
+                const isFist = (
+                    landmarks[12].y > landmarks[9].y && // Middle finger tip below MCP
+                    landmarks[16].y > landmarks[13].y && // Ring finger tip below MCP
+                    landmarks[20].y > landmarks[17].y // Pinky finger tip below MCP
+                );
+                
+                // The pop gesture is: Index extended AND the other fingers are retracted (Fist)
+                if (isIndexExtended && isFist) {
                     // Draw Red Circle for Pop Gesture
                     canvasCtx.beginPath();
                     canvasCtx.arc(tipX, tipY, 15, 0, 2 * Math.PI);
@@ -308,6 +313,7 @@
 
                         const distance = Math.hypot(tipX - bubbleX, tipY - bubbleY);
 
+                        // --- FIX: Ensure the distance check uses the current POP_DISTANCE_THRESHOLD ---
                         if (distance < radius + POP_DISTANCE_THRESHOLD) {
                             score++;
                             scoreDisplay.textContent = `Score: ${score}`;
