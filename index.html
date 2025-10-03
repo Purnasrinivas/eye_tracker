@@ -21,8 +21,10 @@
         }
         #game-area-container {
             position: relative;
-            width: 1024px;
-            height: 576px;
+            width: 90vw;
+            max-width: 1400px;
+            height: 70vh;
+            min-height: 500px;
             border-radius: 1rem;
             overflow: hidden; 
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
@@ -96,7 +98,7 @@
         
         <div id="game-area-container">
             <div id="milky-way-bg"></div>
-            <canvas id="three-canvas" width="1024" height="576"></canvas>
+            <canvas id="three-canvas"></canvas>
             
             <div id="ui-overlay" class="flex flex-col items-center justify-center">
                 <div id="start-screen" class="p-8 bg-gray-900 bg-opacity-90 rounded-xl shadow-2xl space-y-4">
@@ -152,8 +154,14 @@
         }
         
         const CONFIG = {
-            CANVAS_WIDTH: 1024,
-            CANVAS_HEIGHT: 576,
+            get CANVAS_WIDTH() {
+                const container = document.getElementById('game-area-container');
+                return container ? container.offsetWidth : 1024;
+            },
+            get CANVAS_HEIGHT() {
+                const container = document.getElementById('game-area-container');
+                return container ? container.offsetHeight : 576;
+            },
             CAMERA_DISTANCE: 35,
             GRAVITY: 0.0005,
             POP_RANGE: 2.5,
@@ -178,7 +186,7 @@
 
             loadAll(instructionText) {
                 const assetList = [
-                    { name: 'star', url: CONFIG.REPO_ROOT + 'star1.glb', scale: CONFIG.STAR_SCALE },
+                    { name: 'star', url: CONFIG.REPO_ROOT + 'star_gold.glb', scale: CONFIG.STAR_SCALE },
                     { name: 'astronaut', url: CONFIG.REPO_ROOT + 'autronets.glb', scale: CONFIG.ASTRONAUT_SCALE },
                     { name: 'rocket', url: CONFIG.REPO_ROOT + 'rocket.glb', scale: CONFIG.ROCKET_SIZE }
                 ];
@@ -244,6 +252,7 @@
                 this.rocketModel = this.models.rocket.clone();
                 
                 this.astronautPointer.rotation.y = Math.PI;
+                this.scene.add(this.astronautPointer);
 
                 this.astronautLight = new THREE.PointLight(0xadd8e6, 10, 5);
                 this.scene.add(this.astronautLight);
@@ -258,7 +267,6 @@
                     isPopped: false,
                 };
                 
-                // Extreme X randomness with corner bias
                 const xRange = 70;
                 const cornerBias = Math.random();
                 let xPos;
@@ -270,7 +278,6 @@
                     xPos = (Math.random() - 0.5) * xRange;
                 }
                 
-                // Keep Z at 0 for consistent depth (easier to pop)
                 const zPos = 0;
                 const startY = -CONFIG.CAMERA_DISTANCE / 2 - Math.random() * 10;
                 
@@ -315,7 +322,7 @@
             }
 
             startGameOver() {
-                if (this.isGameOver) return; // Prevent multiple calls
+                if (this.isGameOver) return;
                 this.isGameOver = true;
                 this.activeStars.forEach(star => this.scene.remove(star));
                 this.activeStars = [];
@@ -604,8 +611,8 @@
                 if (this.gameScene.scene.children.includes(this.gameScene.rocketModel)) {
                     this.gameScene.scene.remove(this.gameScene.rocketModel);
                 }
-                if (this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
-                    this.gameScene.scene.remove(this.gameScene.astronautPointer);
+                if (!this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
+                    this.gameScene.scene.add(this.gameScene.astronautPointer);
                 }
                 
                 this.score = 0;
@@ -670,33 +677,32 @@
                     
                     this.gameScene.activeStars.forEach(star => {
                         if (star.userData.isPopped) return;
-                        
-                        const dist = star.position.distanceTo(pointerPos);
-                        const TOUCH_TOLERANCE = 1.2;
-                        
-                        if (dist < TOUCH_TOLERANCE * star.scale.x) {
-                            this.score++;
-                            this.dom.score.textContent = `Score: ${this.score}`;
-                            star.userData.isPopped = true;
-                            
-                            new TWEEN.Tween(star.scale)
-                                .to({ x: 0.01, y: 0.01, z: 0.01 }, 100)
-                                .easing(TWEEN.Easing.Quadratic.Out)
-                                .onComplete(() => {
-                                    this.gameScene.scene.remove(star);
-                                    this.gameScene.activeStars = this.gameScene.activeStars.filter(s => s.uuid !== star.uuid);
-                                })
-                                .start();
-                        }
-                    });
-                } else {
-                    if (this.gameScene.scene.children.includes(astronautPointer)) {
-                        this.gameScene.scene.remove(astronautPointer);
-                    }
-                }
+            
+            const dist = star.position.distanceTo(pointerPos);
+            const TOUCH_TOLERANCE = 1.2;
+            
+            if (dist < TOUCH_TOLERANCE * star.scale.x) {
+                this.score++;
+                this.dom.score.textContent = `Score: ${this.score}`;
+                star.userData.isPopped = true;
                 
-                this.prevIndexTipY = landmarks[8].y * CONFIG.CANVAS_HEIGHT;
+                new TWEEN.Tween(star.scale)
+                    .to({ x: 0.01, y: 0.01, z: 0.01 }, 100)
+                    .easing(TWEEN.Easing.Quadratic.Out)
+                    .onComplete(() => {
+                        this.gameScene.scene.remove(star);
+                        this.gameScene.activeStars = this.gameScene.activeStars.filter(s => s.uuid !== star.uuid);
+                    })
+                    .start();
             }
+        });
+    } else {
+        astronautPointer.visible = false; // ✅ Hide instead of remove
+    }
+    
+    this.prevIndexTipY = landmarks[8].y * CONFIG.CANVAS_HEIGHT;
+}
+
         }
         
         document.addEventListener('DOMContentLoaded', () => {
