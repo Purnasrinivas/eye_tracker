@@ -3,611 +3,706 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gesture Bubble Pop Game (Web)</title>
-    <!-- Load Tailwind CSS for styling -->
+    <title>Gesture Star Popper (Pure 3D Game)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load MediaPipe Hands for gesture tracking -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
-    <!-- Load Matter.js for physics simulation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    
     <style>
-        /* Ensure the body takes full viewport height for centering */
         body {
             height: 100vh;
-            background-color: #1a202c; /* Dark background */
+            background-color: #0d1117; 
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
         }
-        /* Style the canvas to ensure it is visible and centered */
-        #game-canvas {
+        #game-area-container {
+            position: relative;
+            width: 1024px;
+            height: 576px;
             border-radius: 1rem;
-            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
-            /* Remove background-color here so the video drawn underneath is visible */
-            background-color: transparent; 
-            position: relative; /* Needed for overlay positioning */
+            overflow: hidden; 
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
         }
-        /* Style for the start button */
-        #start-button {
+        #milky-way-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: url('https://needpix.com/photo/1410680/milky-way-galaxy-space-stars-public-domain-wallpaper-background-science-astronomy'); 
+            background-size: cover;
+            background-position: center;
+            z-index: 1; 
+        }
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2; 
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .game-button {
             padding: 1rem 2.5rem;
             font-size: 1.5rem;
             font-weight: bold;
             border-radius: 0.75rem;
             cursor: pointer;
             transition: transform 0.1s;
+            pointer-events: auto !important;
         }
-        #start-button:hover {
+        .game-button:hover {
             transform: scale(1.05);
         }
-
-        /* NEW: Game Overlay Styling */
-        #game-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center; /* Center items horizontally */
-            justify-content: center; /* Center items vertically */
-            pointer-events: none; /* Allows clicks to pass through to the canvas/start button */
-            z-index: 10;
-        }
-
     </style>
 </head>
 <body class="p-4">
 
     <div class="max-w-4xl w-full text-white text-center">
-        <h1 class="text-4xl font-extrabold mb-2 text-teal-400">Gesture Bubble Pop (Web)</h1>
+        <h1 class="text-4xl font-extrabold mb-2 text-teal-400">Gesture Star Popper (Pure 3D Game)</h1>
         <p class="text-sm mb-6 text-gray-400" id="status-message">
-            Loading MediaPipe and Physics Engine...
+            Loading external dependencies...
         </p>
 
-        <!-- Display Score and Instructions -->
         <div class="flex justify-between items-center mb-4 p-3 bg-gray-700 rounded-lg shadow-lg">
             <div id="score-display" class="text-3xl font-bold text-yellow-300">Score: 0</div>
-            <!-- NEW MISSED COUNT DISPLAY -->
-            <div id="missed-display" class="text-2xl font-semibold text-red-400">Missed: 0 / 3</div>
+            
+            <div class="flex items-center space-x-4">
+                <label for="difficulty-select" class="text-gray-300 font-semibold text-base">Difficulty:</label>
+                <select id="difficulty-select" class="bg-gray-800 text-white rounded-md p-1.5 focus:ring-teal-400 focus:border-teal-400">
+                    <option value="Easy">Easy</option>
+                    <option value="Hard" selected>Hard</option>
+                    <option value="Pro">Pro</option>
+                </select>
+                <div id="missed-display" class="text-2xl font-semibold text-red-400">Missed: 0 / 3</div>
+            </div>
+
             <div class="text-left text-sm text-gray-300">
-                <p>👊 **POP:** Closed fist + Index finger near bubble.</p>
-                <p>✋ **PUSH:** Open palm to move bubbles.</p>
+                <p>🚀 **POP:** Tap stars with Astronaut pointer.</p>
+                <p>🛰️ **PUSH:** Open palm to move stars.</p>
             </div>
         </div>
         
-        <!-- Video element for camera feed (hidden from display, but stream is accessible) -->
         <video id="webcam" autoplay playsinline style="display: none;"></video>
         
-        <!-- Canvas Container -->
-        <div class="relative inline-block">
-            <!-- Canvas for rendering the game overlay -->
-            <canvas id="game-canvas" width="1024" height="576"></canvas>
-
-            <!-- Overlay for Start/Game Over screen -->
-            <div id="game-overlay">
-                <!-- Start Button Overlay -->
-                <button id="start-button" class="bg-green-500 hover:bg-green-600 text-white" style="display:none; pointer-events: auto;">Start Game</button>
+        <div id="game-area-container">
+            <div id="milky-way-bg"></div>
+            <canvas id="three-canvas" width="1024" height="576"></canvas>
+            
+            <div id="ui-overlay" class="flex flex-col items-center justify-center">
+                <div id="start-screen" class="p-8 bg-gray-900 bg-opacity-90 rounded-xl shadow-2xl space-y-4">
+                    <div class="text-4xl font-bold text-teal-400">Cosmic Star Popper</div>
+                    <div id="instruction-text" class="text-lg text-gray-300 leading-relaxed">
+                        <p>Welcome to your mission! Stop the stars from escaping the gravity well.</p>
+                        <ul class="list-disc list-inside text-left mx-auto max-w-xs mt-4">
+                            <li>**POP:** Tap stars with a closed fist + index finger.</li>
+                            <li>**PUSH:** Use an open palm to redirect stars.</li>
+                            <li>**Goal:** Don't let 3 stars drift out the red ceiling boundary.</li>
+                        </ul>
+                        <p class="mt-4 text-yellow-400">Loading initial data... Please wait.</p>
+                    </div>
+                    <button id="start-button" class="game-button bg-green-600 hover:bg-green-700 text-white" style="display:none;">Start Game</button>
+                </div>
             </div>
         </div>
         
     </div>
 
     <script>
-        // --- Global Config ---
-        const CANVAS_WIDTH = 1024;
-        const CANVAS_HEIGHT = 576;
-        let SPAWN_INTERVAL = 1500; // ms (Initial interval: 1.5 seconds)
-        const MIN_SPAWN_INTERVAL = 500; // ms (Fastest possible interval)
-        const DIFFICULTY_REDUCTION = 100; // ms to reduce interval by per step
-        const DIFFICULTY_STEP_TIME = 50000; // 10 seconds
-        const BUBBLE_RADIUS_MIN = 20;
-        const BUBBLE_RADIUS_MAX = 40;
-        const POP_DISTANCE_THRESHOLD = 30; // Max distance in pixels to pop
-        const FPS = 60;
+        function loadScript(url, updateMessage) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = url;
+                script.onload = () => {
+                    updateMessage(`Loaded: ${url.split('/').pop()}`);
+                    resolve();
+                };
+                script.onerror = () => {
+                    updateMessage(`ERROR: Failed to load ${url.split('/').pop()}`);
+                    reject(new Error(`Failed to load script: ${url}`));
+                };
+                document.head.appendChild(script);
+            });
+        }
 
-        // --- Game State ---
-        let score = 0;
-        let bubbles = [];
-        let handLandmarks = null;
-        let isCameraActive = false;
-        
-        // NEW GAME START FLAG
-        let isGameStarted = false; 
-
-        // NEW DIFFICULTY AND GAME OVER STATE
-        let missedBubblesCount = 0;
-        const maxMissedBubbles = 3;
-        let isGameOver = false;
-        let spawnIntervalId = null;
-        let startTime = null; // To track game duration
-        
-        // Difficulty tracking
-        let lastDifficultyIncreaseTime = null; 
-        
-        // --- DOM Elements ---
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('game-canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const scoreDisplay = document.getElementById('score-display');
-        const statusMessage = document.getElementById('status-message');
-        const missedDisplay = document.getElementById('missed-display'); // New DOM element
-        const startButton = document.getElementById('start-button');
-        const gameOverlay = document.getElementById('game-overlay');
-
-        // --- Physics Engine (Matter.js) Setup ---
-        const Engine = Matter.Engine,
-              Events = Matter.Events, // Import Events
-              Bodies = Matter.Bodies,
-              Composite = Matter.Composite,
-              Vector = Matter.Vector;
-
-        const engine = Engine.create();
-        const world = engine.world;
-        // Set gravity to negative so bubbles float upwards toward the miss zone (top)
-        engine.gravity.y = -0.05; 
-        
-        // Add boundaries (Ground and Walls)
-        const thickness = 30; 
-        
-        // Define bodies outside the array for access in event listeners
-        const floor = Bodies.rectangle(CANVAS_WIDTH / 2, CANVAS_HEIGHT - thickness / 2, CANVAS_WIDTH, thickness, { 
-            isStatic: true, 
-            label: 'Floor', 
-            id: 'floor', // Add unique ID for collision detection
-            render: { fillStyle: '#4a5568' } // Gray floor boundary
-        });
-        const ceiling = Bodies.rectangle(CANVAS_WIDTH / 2, thickness / 2, CANVAS_WIDTH, thickness, { 
-            isStatic: true, 
-            label: 'Ceiling', 
-            id: 'ceiling', // Add unique ID for collision detection
-            render: { fillStyle: '#ff0000' } // Red miss zone
-        });
-        
-        const walls = [
-            floor,
-            ceiling,
-            // Walls
-            Bodies.rectangle(thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
-            Bodies.rectangle(CANVAS_WIDTH - thickness / 2, CANVAS_HEIGHT / 2, thickness, CANVAS_HEIGHT, { isStatic: true, label: 'Wall' }),
-        ];
-        Composite.add(world, walls);
-        
-        // --- Matter.js Collision Handling ---
-        Events.on(engine, 'collisionStart', (event) => {
-            if (isGameOver) return;
-
-            const pairs = event.pairs;
-            
-            pairs.forEach(pair => {
-                const bodyA = pair.bodyA;
-                const bodyB = pair.bodyB;
+        async function loadDependencies(updateStatus) {
+            try {
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/tween.js/16.0.0/Tween.min.js', updateStatus); 
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', updateStatus);
+                await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js', updateStatus);
+                await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands', updateStatus);
                 
-                let bubbleBody = null;
-                // We only care about the ceiling boundary collision (miss zone)
-                if (bodyA.label === 'Bubble' && bodyB.id === 'ceiling') {
-                    bubbleBody = bodyA;
-                } else if (bodyB.label === 'Bubble' && bodyA.id === 'ceiling') {
-                    bubbleBody = bodyB;
+                window.app = new GameController();
+                
+            } catch (error) {
+                console.error("FATAL: Could not load core libraries.", error);
+                document.getElementById('status-message').textContent = "FATAL ERROR: Could not load core libraries. See console.";
+            }
+        }
+        
+        const CONFIG = {
+            CANVAS_WIDTH: 1024,
+            CANVAS_HEIGHT: 576,
+            CAMERA_DISTANCE: 35,
+            GRAVITY: 0.0005,
+            POP_RANGE: 2.5,
+            ASTRONAUT_SCALE: 5.0,
+            STAR_SCALE: 5.0,
+            ROCKET_SIZE: 15.0,
+            ROCKET_LAUNCH_TIME: 250,
+            Y_MOVEMENT_THRESHOLD: 0.003 * 576, 
+            MIN_SPAWN_INTERVAL: 300, 
+            REPO_ROOT: 'https://raw.githubusercontent.com/Purnasrinivas/3d-images/main/',
+            DIFFICULTY_LEVELS: { 'Easy': 1200, 'Hard': 700, 'Pro': 300 },
+            SPAWN_SPEED_MIN: 0.05,
+            SPAWN_SPEED_MAX: 0.15
+        };
+
+        class AssetManager {
+            constructor() {
+                this.models = {};
+                this.loadingManager = new THREE.LoadingManager();
+                this.gltfLoader = new THREE.GLTFLoader(this.loadingManager);
+            }
+
+            loadAll(instructionText) {
+                const assetList = [
+                    { name: 'star', url: CONFIG.REPO_ROOT + 'star1.glb', scale: CONFIG.STAR_SCALE },
+                    { name: 'astronaut', url: CONFIG.REPO_ROOT + 'autronets.glb', scale: CONFIG.ASTRONAUT_SCALE },
+                    { name: 'rocket', url: CONFIG.REPO_ROOT + 'rocket.glb', scale: CONFIG.ROCKET_SIZE }
+                ];
+
+                return new Promise((resolve, reject) => {
+                    this.loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+                        instructionText.innerHTML = `Loading 3D assets... (${itemsLoaded}/${itemsTotal})`;
+                    };
+                    this.loadingManager.onLoad = () => {
+                        resolve(this.models);
+                    };
+                    this.loadingManager.onError = (url) => {
+                        reject(`Failed to load asset: ${url}`);
+                    };
+
+                    assetList.forEach(asset => {
+                        this.gltfLoader.load(asset.url, (gltf) => {
+                            const model = gltf.scene;
+                            model.scale.set(asset.scale, asset.scale, asset.scale);
+                            this.models[asset.name] = model;
+                        }, undefined, (error) => console.error(`Failed to load ${asset.name}:`, error));
+                    });
+                });
+            }
+        }
+
+        class GameScene {
+            constructor(models) {
+                this.models = models;
+                this.activeStars = [];
+                this.isGameOver = false;
+                this.rocketAnimationFrame = 0;
+
+                this.setupScene();
+                this.setupModels();
+                this.animate(0);
+            }
+
+            setupScene() {
+                const canvas = document.getElementById('three-canvas');
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, CONFIG.CANVAS_WIDTH / CONFIG.CANVAS_HEIGHT, 0.1, 1000);
+                this.camera.position.z = CONFIG.CAMERA_DISTANCE;
+
+                this.renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+                this.renderer.setSize(CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+                
+                this.scene.add(new THREE.AmbientLight(0x404040, 5));
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+                directionalLight.position.set(5, 5, 5);
+                this.scene.add(directionalLight);
+
+                const starfield = new THREE.Points(
+                    new THREE.SphereGeometry(200, 32, 32),
+                    new THREE.PointsMaterial({ color: 0xffffff, size: 0.1 })
+                );
+                this.scene.add(starfield);
+            }
+
+            setupModels() {
+                this.starTemplate = this.models.star.clone();
+                this.astronautPointer = this.models.astronaut.clone();
+                this.rocketModel = this.models.rocket.clone();
+                
+                this.astronautPointer.rotation.y = Math.PI;
+
+                this.astronautLight = new THREE.PointLight(0xadd8e6, 10, 5);
+                this.scene.add(this.astronautLight);
+                
+                this.gameOverShown = false;
+            }
+            
+            createStar() {
+                const star = this.starTemplate.clone();
+                star.userData = {
+                    speed: CONFIG.SPAWN_SPEED_MIN + Math.random() * (CONFIG.SPAWN_SPEED_MAX - CONFIG.SPAWN_SPEED_MIN),
+                    isPopped: false,
+                };
+                
+                // Extreme X randomness with corner bias
+                const xRange = 70;
+                const cornerBias = Math.random();
+                let xPos;
+                if (cornerBias < 0.35) {
+                    xPos = -xRange / 2 + Math.random() * 10;
+                } else if (cornerBias < 0.70) {
+                    xPos = xRange / 2 - Math.random() * 10;
+                } else {
+                    xPos = (Math.random() - 0.5) * xRange;
                 }
+                
+                // Keep Z at 0 for consistent depth (easier to pop)
+                const zPos = 0;
+                const startY = -CONFIG.CAMERA_DISTANCE / 2 - Math.random() * 10;
+                
+                star.position.set(xPos, startY, zPos);
 
-                // If a bubble hits the ceiling/miss zone, count it as a miss and pop it
-                if (bubbleBody) {
-                    missedBubblesCount++;
-                    missedDisplay.textContent = `Missed: ${missedBubblesCount} / ${maxMissedBubbles}`;
-                    removeBubble(bubbleBody); // Remove it immediately to prevent stacking
+                this.scene.add(star);
+                this.activeStars.push(star);
+            }
 
-                    if (missedBubblesCount >= maxMissedBubbles) {
-                        gameOver();
+            updateStars(gameController) {
+                for (let i = this.activeStars.length - 1; i >= 0; i--) {
+                    const star = this.activeStars[i];
+                    if (star.userData.isPopped) continue;
+
+                    star.position.y += star.userData.speed;
+                    star.rotation.y += 0.01;
+                    
+                    if (star.position.y > CONFIG.CAMERA_DISTANCE / 2) {
+                        gameController.missStar();
+                        this.scene.remove(star);
+                        this.activeStars.splice(i, 1);
+                        return;
                     }
                 }
-            });
-        });
+            }
 
-
-        // --- MediaPipe Hands Setup ---
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-        hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        hands.onResults(onResults);
-
-        function onResults(results) {
-            // Store normalized landmarks globally
-            handLandmarks = results.multiHandLandmarks;
-        }
-        
-        function gameOver() {
-            isGameOver = true;
-            clearInterval(spawnIntervalId);
-            
-            // Draw Game Over Text
-            canvasCtx.font = "bold 60px Inter";
-            canvasCtx.fillStyle = 'rgba(255, 50, 50, 0.9)';
-            canvasCtx.textAlign = 'center';
-            canvasCtx.fillText("GAME OVER", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-            canvasCtx.fillText(`Final Score: ${score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 70);
-            
-            // Display Retry Button
-            startButton.textContent = "RETRY";
-            startButton.onclick = () => window.location.reload(); // Simple retry function
-            startButton.style.display = 'block';
-            startButton.style.position = 'relative'; // Ensure button is centered within the overlay div
-            
-            gameOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)'; // Apply dark overlay
-            gameOverlay.style.pointerEvents = 'auto';
-            statusMessage.textContent = "GAME OVER! Three bubbles missed. Click RETRY to play again.";
-        }
-
-        function createBubble() {
-            const radius = Math.random() * (BUBBLE_RADIUS_MAX - BUBBLE_RADIUS_MIN) + BUBBLE_RADIUS_MIN;
-            // Spawn point at the bottom of the screen (high Y in Matter.js world)
-            const x = CANVAS_WIDTH * (0.2 + Math.random() * 0.6);
-            const y = CANVAS_HEIGHT - radius - 5; 
-            
-            const bubble = Bodies.circle(x, y, radius, {
-                restitution: 0.9,
-                friction: 0.001,
-                density: 0.0001, 
-                label: 'Bubble',
-                plugin: { 
-                    bubble: true, 
-                    radius: radius 
+            animate(time) {
+                requestAnimationFrame(this.animate.bind(this));
+                
+                TWEEN.update(time);
+                
+                if (window.app && window.app.isGameStarted && !this.isGameOver) {
+                    this.updateStars(window.app);
+                    window.app.popStarCheck(this.astronautPointer);
                 }
-            });
 
-            Composite.add(world, bubble);
-            bubbles.push(bubble);
-        }
+                if (this.isGameOver) {
+                    this.animateGameOver();
+                }
 
-        function removeBubble(bubble) {
-            Composite.remove(world, bubble);
-            bubbles = bubbles.filter(b => b.id !== bubble.id);
-        }
+                this.renderer.render(this.scene, this.camera);
+            }
 
-        function popBubbleCheck(handLandmarks) {
-            if (!handLandmarks) return;
-
-            handLandmarks.forEach(landmarks => {
-                // MediaPipe gives normalized (0 to 1) coordinates.
-                if (!landmarks) return;
-
-                // --- MIRRORING FIX: Apply 1 - X transformation ---
-                const standardTipX = landmarks[8].x;
-                const tipX = CANVAS_WIDTH * (1 - standardTipX); // Mirrored X
-                const tipY = landmarks[8].y * CANVAS_HEIGHT;
-
-                // Index Tip (8) is above Index MCP (5)
-                const isIndexExtended = landmarks[8].y < landmarks[5].y;
+            startGameOver() {
+                if (this.isGameOver) return; // Prevent multiple calls
+                this.isGameOver = true;
+                this.activeStars.forEach(star => this.scene.remove(star));
+                this.activeStars = [];
                 
-                // Check if all fingers are retracted (i.e., closed fist, not pointing)
-                const isFist = (
-                    landmarks[12].y > landmarks[9].y && // Middle finger tip below MCP
-                    landmarks[16].y > landmarks[13].y && // Ring finger tip below MCP
-                    landmarks[20].y > landmarks[17].y // Pinky finger tip below MCP
-                );
-                
-                // The pop gesture is: Index extended AND the other fingers are retracted (Fist)
-                if (isIndexExtended && isFist) {
-                    // Draw Red Circle for Pop Gesture
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(tipX, tipY, 15, 0, 2 * Math.PI);
-                    canvasCtx.strokeStyle = 'red';
-                    canvasCtx.lineWidth = 3;
-                    canvasCtx.stroke();
+                this.rocketAnimationFrame = 0; 
+                this.rocketModel.scale.set(CONFIG.ROCKET_SIZE * 0.5, CONFIG.ROCKET_SIZE * 0.5, CONFIG.ROCKET_SIZE * 0.5); 
+                this.rocketModel.rotation.set(0, 0, 0); 
+                this.rocketModel.position.set(0, -20, 0);
+                this.scene.add(this.rocketModel); 
+            }
 
-                    // Check for bubble contact
-                    bubbles.forEach(bubble => {
-                        // Matter.js Y is inverted for drawing (Y=0 is top in physics, Y=0 is top in canvas)
-                        const bubbleX = bubble.position.x;
-                        const bubbleY = CANVAS_HEIGHT - bubble.position.y;
-                        const radius = bubble.plugin.radius;
+            animateGameOver() {
+                if (this.rocketAnimationFrame >= CONFIG.ROCKET_LAUNCH_TIME) {
+                    if (!this.gameOverShown) {
+                        this.gameOverShown = true;
+                        window.app.showFinalGameOverScreen();
+                    }
+                    return;
+                }
 
-                        const distance = Math.hypot(tipX - bubbleX, tipY - bubbleY);
+                const ROCKET_BOTTOM_Y = -15;
+                const ROCKET_BOARDING_Y = -10;
+                const ROCKET_LAUNCH_Y = 60;
 
-                        // --- FIX: Ensure the distance check uses the current POP_DISTANCE_THRESHOLD ---
-                        if (distance < radius + POP_DISTANCE_THRESHOLD) {
-                            score++;
-                            scoreDisplay.textContent = `Score: ${score}`;
-                            removeBubble(bubble);
-                        }
-                    });
+                if (this.rocketAnimationFrame <= 40) { 
+                    const p = this.rocketAnimationFrame / 40;
+                    this.rocketModel.position.y = ROCKET_BOTTOM_Y + (ROCKET_BOARDING_Y - ROCKET_BOTTOM_Y) * p;
+                    this.rocketModel.position.x = 0;
+                    this.rocketModel.position.z = 0;
+                    this.rocketModel.rotation.y += 0.02;
+                    
+                    if (this.scene.children.includes(this.astronautPointer)) {
+                        this.scene.remove(this.astronautPointer);
+                    }
+                    window.app.statusUpdate("Emergency shuttle arriving from below...");
                 } 
+                else if (this.rocketAnimationFrame <= 120) { 
+                    this.rocketModel.position.y = ROCKET_BOARDING_Y;
+                    this.rocketModel.position.x = 0;
+                    this.rocketModel.position.z = 0;
+                    
+                    if (!this.scene.children.includes(this.astronautPointer)) {
+                        this.scene.add(this.astronautPointer);
+                    }
+                    
+                    this.astronautPointer.scale.set(CONFIG.ASTRONAUT_SCALE, CONFIG.ASTRONAUT_SCALE, CONFIG.ASTRONAUT_SCALE);
+                    
+                    const boardingProgress = (this.rocketAnimationFrame - 40) / 80;
+                    const ASTRO_START_X = -8;
+                    const ASTRO_START_Y = ROCKET_BOARDING_Y + 5;
+                    
+                    this.astronautPointer.position.set(
+                        ASTRO_START_X + (8 * boardingProgress),
+                        ASTRO_START_Y - (15 * boardingProgress),
+                        5
+                    );
+                    this.astronautPointer.rotation.z = Math.PI / 6 * boardingProgress;
+
+                    if (this.rocketAnimationFrame < 80) {
+                        window.app.statusUpdate("Astronaut boarding the shuttle...");
+                    } else {
+                        window.app.statusUpdate("Hatch sealed. Preparing for launch.");
+                        if (this.scene.children.includes(this.astronautPointer)) {
+                            this.scene.remove(this.astronautPointer);
+                        }
+                    }
+                } 
+                else { 
+                    const launchFrames = CONFIG.ROCKET_LAUNCH_TIME - 120;
+                    const p = (this.rocketAnimationFrame - 120) / launchFrames;
+                    
+                    this.rocketModel.position.x = 0;
+                    this.rocketModel.position.z = 0;
+                    this.rocketModel.position.y = ROCKET_BOARDING_Y + (ROCKET_LAUNCH_Y - ROCKET_BOARDING_Y) * p; 
+                    
+                    this.rocketModel.rotation.y += 0.12;
+                    this.rocketModel.rotation.x = Math.sin(p * Math.PI) * 0.1;
+                    
+                    window.app.statusUpdate("Launch sequence engaged! Escaping sector...");
+                }
+
+                this.rocketAnimationFrame++;
+            }
+        }
+
+        class GameController {
+            constructor() {
+                this.isGameStarted = false;
+                this.score = 0;
+                this.missedBubblesCount = 0;
+                this.maxMissedBubbles = 3;
+                this.spawnIntervalId = null;
+                this.SPAWN_INTERVAL = CONFIG.DIFFICULTY_LEVELS.Hard;
+                this.prevIndexTipY = 0;
+                this.handLandmarks = null;
+                this.hands = null;
+                this.gameScene = null;
+                this.assetsReady = false;
+
+                this.dom = {
+                    status: document.getElementById('status-message'),
+                    instruction: document.getElementById('instruction-text'),
+                    startBtn: document.getElementById('start-button'),
+                    score: document.getElementById('score-display'),
+                    missed: document.getElementById('missed-display'),
+                    difficulty: document.getElementById('difficulty-select'),
+                    video: document.getElementById('webcam'),
+                    uiOverlay: document.getElementById('ui-overlay'),
+                    startScreen: document.getElementById('start-screen')
+                };
+
+                this.init();
+            }
+
+            statusUpdate(message) {
+                this.dom.status.textContent = message;
+            }
+
+            async init() {
+                this.initThreeD();
                 
-                // --- Gesture: PUSH/MOVE (Open Palm) ---
-                else if (landmarks[12].y < landmarks[9].y) { // Simple check for open hand
-                    // --- MIRRORING FIX: Apply 1 - X transformation ---
-                    const standardPalmX = landmarks[0].x;
-                    const palmX = CANVAS_WIDTH * (1 - standardPalmX); // Mirrored X
-                    const palmY = landmarks[0].y * CANVAS_HEIGHT;
+                const assetManager = new AssetManager();
+                try {
+                    const models = await assetManager.loadAll(this.dom.instruction);
+                    this.assetsReady = true;
+                    this.gameScene = new GameScene(models);
+                    this.setupUIForStart();
+                } catch (error) {
+                    this.dom.instruction.innerHTML = `<p class="text-2xl text-red-500 mb-4">ASSET LOAD FAILURE</p>
+                    <p class="text-sm text-gray-400">Error: ${error}. Ensure GLB links are RAW GitHub content.</p>`;
+                }
+            }
+            
+            async initThreeD() {
+                const canvas = document.getElementById('three-canvas');
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(75, CONFIG.CANVAS_WIDTH / CONFIG.CANVAS_HEIGHT, 0.1, 1000);
+                camera.position.z = CONFIG.CAMERA_DISTANCE;
+                
+                const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+                renderer.setSize(CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+                
+                scene.add(new THREE.AmbientLight(0xffffff, 1));
+                renderer.render(scene, camera);
 
-                    // Draw Yellow Circle for Push Gesture
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(palmX, palmY, 20, 0, 2 * Math.PI);
-                    canvasCtx.strokeStyle = 'yellow';
-                    canvasCtx.lineWidth = 3;
-                    canvasCtx.stroke();
+                this.startCamera();
+            }
 
-                    // Apply force to bubbles near the palm
-                    bubbles.forEach(bubble => {
-                        const bubblePos = { x: bubble.position.x, y: CANVAS_HEIGHT - bubble.position.y };
-                        const palmPos = { x: palmX, y: palmY };
-                        const radius = bubble.plugin.radius;
+            setupUIForStart() {
+                const self = this;
+                this.dom.instruction.innerHTML = `
+                    <p class="text-2xl text-yellow-400 mb-4">Assets loaded! Click START to begin your mission.</p>
+                    <p class="text-sm text-gray-400">Note: Camera access is required for gesture control.</p>
+                `;
+                this.dom.startBtn.style.display = 'block';
+                this.dom.startBtn.addEventListener('click', function() {
+                    self.startGame();
+                });
+                
+                this.dom.difficulty.addEventListener('change', function() {
+                    self.updateDifficulty(this.value);
+                });
+                
+                this.statusUpdate("Ready for launch.");
+            }
 
-                        const distance = Math.hypot(palmPos.x - bubblePos.x, palmPos.y - bubblePos.y);
+            async setupMediaPipe() {
+                this.hands = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                });
+                this.hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                
+                this.hands.onResults((results) => {
+                    this.handLandmarks = results.multiHandLandmarks ? results.multiHandLandmarks : null;
+                });
+                
+                this.sendToMediaPipe();
+            }
 
-                        if (distance < radius + 50) {
-                            // Calculate simple push force away from the palm
-                            const dx = bubblePos.x - palmPos.x;
-                            const dy = bubblePos.y - palmPos.y;
+            async sendToMediaPipe() { 
+                if (!this.dom.video.srcObject || !this.hands) {
+                    requestAnimationFrame(this.sendToMediaPipe.bind(this));
+                    return;
+                }
+                
+                if (this.dom.video.readyState >= 2) {
+                    await this.hands.send({ image: this.dom.video });
+                }
+                requestAnimationFrame(this.sendToMediaPipe.bind(this));
+            }
+
+            async startCamera() { 
+                this.statusUpdate("Requesting camera permission...");
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    this.dom.video.srcObject = stream;
+                    this.dom.video.play();
+                    
+                    this.dom.video.onloadedmetadata = () => {
+                        this.setupMediaPipe(); 
+                    };
+                } catch (err) {
+                    this.statusUpdate(`Camera Error: ${err.name}. Camera access required for gesture control.`);
+                    console.error("Camera access denied or device error:", err);
+                }
+            }
+            
+            startGame() {
+                if (!this.assetsReady) return;
+
+                this.dom.startScreen.style.display = 'none';
+                this.dom.uiOverlay.style.pointerEvents = 'none';
+                
+                this.score = 0;
+                this.missedBubblesCount = 0;
+                this.isGameOver = false;
+                
+                this.dom.score.textContent = 'Score: 0';
+                this.dom.missed.textContent = 'Missed: 0 / 3';
+                
+                this.SPAWN_INTERVAL = CONFIG.DIFFICULTY_LEVELS[this.dom.difficulty.value] || CONFIG.DIFFICULTY_LEVELS.Hard;
+                this.spawnIntervalId = setInterval(this.gameScene.createStar.bind(this.gameScene), this.SPAWN_INTERVAL);
+                
+                this.lastDifficultyIncreaseTime = Date.now();
+                this.isGameStarted = true;
+                this.statusUpdate("Game Active. Go for high score!");
+            }
+
+            missStar() {
+                this.missedBubblesCount++;
+                this.dom.missed.textContent = `Missed: ${this.missedBubblesCount} / ${this.maxMissedBubbles}`;
+                
+                if (this.missedBubblesCount >= this.maxMissedBubbles) {
+                    this.isGameOver = true;
+                    this.isGameStarted = false;
+                    clearInterval(this.spawnIntervalId); 
+                    this.gameScene.startGameOver();
+                }
+            }
+
+            showFinalGameOverScreen() {
+                 if (this.gameScene.scene.children.includes(this.gameScene.rocketModel)) {
+                     this.gameScene.scene.remove(this.gameScene.rocketModel);
+                 }
+                 if (this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
+                     this.gameScene.scene.remove(this.gameScene.astronautPointer);
+                 }
+                 
+                 this.dom.startScreen.innerHTML = '';
+                 this.dom.uiOverlay.style.pointerEvents = 'auto';
+                 this.dom.startScreen.style.display = 'flex';
+                 
+                 const container = document.createElement('div');
+                 container.style.pointerEvents = 'auto';
+                 container.innerHTML = `
+                    <div class="text-6xl font-extrabold text-red-500 mb-6">MISSION FAILED</div>
+                    <div class="text-4xl text-yellow-300 font-bold mb-8">Final Score: ${this.score}</div>
+                    <p class="text-lg text-gray-300 mb-6">The stars escaped! Better luck next time, astronaut.</p>
+                 `;
+                 
+                 const retryBtn = document.createElement('button');
+                 retryBtn.className = 'game-button px-8 py-4 text-2xl font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl';
+                 retryBtn.textContent = 'TRY AGAIN';
+                 retryBtn.style.pointerEvents = 'auto';
+                 retryBtn.style.cursor = 'pointer';
+                 
+                 const self = this;
+                 retryBtn.onclick = function() {
+                     self.restartGame();
+                 };
+                 
+                 container.appendChild(retryBtn);
+                 this.dom.startScreen.appendChild(container);
+                 
+                 this.statusUpdate("Game Over. Ready for another mission?");
+            }
+
+            restartGame() {
+                this.gameScene.activeStars.forEach(star => {
+                    if (this.gameScene.scene.children.includes(star)) {
+                        this.gameScene.scene.remove(star);
+                    }
+                });
+                this.gameScene.activeStars = [];
+                
+                if (this.gameScene.scene.children.includes(this.gameScene.rocketModel)) {
+                    this.gameScene.scene.remove(this.gameScene.rocketModel);
+                }
+                if (this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
+                    this.gameScene.scene.remove(this.gameScene.astronautPointer);
+                }
+                
+                this.score = 0;
+                this.missedBubblesCount = 0;
+                this.isGameOver = false;
+                this.gameScene.isGameOver = false;
+                this.gameScene.rocketAnimationFrame = 0;
+                this.gameScene.gameOverShown = false;
+                
+                this.dom.score.textContent = 'Score: 0';
+                this.dom.missed.textContent = 'Missed: 0 / 3';
+                
+                this.dom.startScreen.style.display = 'none';
+                this.dom.uiOverlay.style.pointerEvents = 'none';
+                
+                this.startGame();
+            }
+
+            updateDifficulty(value) {
+                this.SPAWN_INTERVAL = CONFIG.DIFFICULTY_LEVELS[value] || CONFIG.DIFFICULTY_LEVELS.Hard;
+                if (this.isGameStarted) {
+                    clearInterval(this.spawnIntervalId);
+                    this.spawnIntervalId = setInterval(this.gameScene.createStar.bind(this.gameScene), this.SPAWN_INTERVAL);
+                }
+            }
+
+            popStarCheck(astronautPointer) {
+                if (!this.handLandmarks || this.handLandmarks.length === 0) {
+                     if (this.gameScene.scene.children.includes(astronautPointer)) {
+                         this.gameScene.scene.remove(astronautPointer);
+                     }
+                     return;
+                }
+                
+                const landmarks = this.handLandmarks[0];
+                
+                const tipX = CONFIG.CANVAS_WIDTH * (1 - landmarks[8].x);
+                const tipY = CONFIG.CANVAS_HEIGHT * landmarks[8].y;
+                
+                const vector = new THREE.Vector3(
+                    (tipX / CONFIG.CANVAS_WIDTH) * 2 - 1,
+                    -(tipY / CONFIG.CANVAS_HEIGHT) * 2 + 1,
+                    0.5
+                );
+                vector.unproject(this.gameScene.camera);
+                
+                const dir = vector.sub(this.gameScene.camera.position).normalize();
+                const distance = -this.gameScene.camera.position.z / dir.z;
+                const pointerPos = this.gameScene.camera.position.clone().add(dir.multiplyScalar(distance));
+                
+                astronautPointer.position.copy(pointerPos);
+                this.gameScene.astronautLight.position.copy(pointerPos);
+
+                const isIndexExtended = landmarks[8].y < landmarks[5].y;
+                const isFist = (landmarks[12].y > landmarks[9].y && landmarks[16].y > landmarks[13].y);
+                const isPopPosture = isIndexExtended && isFist;
+
+                if (isPopPosture) {
+                    if (!this.gameScene.scene.children.includes(astronautPointer)) {
+                        this.gameScene.scene.add(astronautPointer);
+                    }
+                    
+                    this.gameScene.activeStars.forEach(star => {
+                        if (star.userData.isPopped) return;
+                        
+                        const dist = star.position.distanceTo(pointerPos);
+                        const TOUCH_TOLERANCE = 1.2;
+                        
+                        if (dist < TOUCH_TOLERANCE * star.scale.x) {
+                            this.score++;
+                            this.dom.score.textContent = `Score: ${this.score}`;
+                            star.userData.isPopped = true;
                             
-                            // Matter.js force vector must be in the physics coordinate system (Y inverted)
-                            const force = Vector.mult({ x: dx, y: -dy }, 0.00005); 
-                            Matter.Body.applyForce(bubble, bubble.position, force);
+                            new TWEEN.Tween(star.scale)
+                                .to({ x: 0.01, y: 0.01, z: 0.01 }, 100)
+                                .easing(TWEEN.Easing.Quadratic.Out)
+                                .onComplete(() => {
+                                    this.gameScene.scene.remove(star);
+                                    this.gameScene.activeStars = this.gameScene.activeStars.filter(s => s.uuid !== star.uuid);
+                                })
+                                .start();
                         }
                     });
+                } else {
+                    if (this.gameScene.scene.children.includes(astronautPointer)) {
+                        this.gameScene.scene.remove(astronautPointer);
+                    }
                 }
-            });
-        }
-        
-        function drawStartScreen() {
-            // Draw video feed and overlay instructions
-            canvasCtx.save();
-            canvasCtx.scale(-1, 1);
-            canvasCtx.translate(-CANVAS_WIDTH, 0); 
-            canvasCtx.drawImage(videoElement, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-            canvasCtx.restore(); 
-            
-            // Dark overlay for readability
-            canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            canvasCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-            
-            canvasCtx.fillStyle = 'white';
-            canvasCtx.textAlign = 'center';
-            canvasCtx.font = "bold 48px Inter";
-            canvasCtx.fillText("Welcome to Bubble Pop!", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 4);
-
-            canvasCtx.font = "24px Inter";
-            canvasCtx.fillText("Get ready to pop the floating bubbles with your hand gestures.", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 4 + 50);
-
-            // Instructions text
-            canvasCtx.textAlign = 'left';
-            canvasCtx.font = "20px Inter";
-            let lineY = CANVAS_HEIGHT / 2 - 30;
-            const lineSpacing = 30;
-
-            canvasCtx.fillStyle = '#6EE7B7'; // Teal
-            canvasCtx.fillText("Phase 1: Easy Start (Difficulty increases every 5 seconds)", 200, lineY);
-            lineY += lineSpacing;
-
-            canvasCtx.fillStyle = 'white';
-            canvasCtx.fillText("1. POP: Use a closed fist with an extended index finger.", 200, lineY);
-            lineY += lineSpacing;
-            canvasCtx.fillText("2. PUSH: Use an open palm to nudge bubbles away from the ceiling (red zone).", 200, lineY);
-            lineY += lineSpacing;
-            canvasCtx.fillText("3. Game Over: Miss 3 bubbles (let them touch the ceiling).", 200, lineY);
-            lineY += lineSpacing * 2;
-            
-            canvasCtx.fillStyle = '#FBBF24'; // Yellow
-            canvasCtx.fillText("Click START when you are ready!", CANVAS_WIDTH / 2, lineY);
-
-            // Display Start Button via the overlay div
-            startButton.textContent = "START GAME";
-            startButton.style.display = 'block';
-            gameOverlay.style.pointerEvents = 'auto'; // Re-enable pointer events for the button
-            
-            // --- FIX: Aligning the button in the center of the overlay ---
-            gameOverlay.style.justifyContent = 'flex-end'; // Push button to the bottom
-            gameOverlay.style.paddingBottom = '80px'; // Add some padding from the bottom
-            // The button itself is centered horizontally because the game-overlay uses align-items: center
-
-            // Check if MediaPipe is actively tracking hands
-            if (handLandmarks) {
-                popBubbleCheck(handLandmarks);
-            }
-        }
-
-
-        // --- Rendering Loop ---
-
-        function drawGame() {
-            
-            // If the game hasn't started, draw the instruction screen
-            if (!isGameStarted) {
-                if (isCameraActive) {
-                    drawStartScreen();
-                }
-                // Continue feeding MediaPipe even on start screen
-                requestAnimationFrame(drawGame);
-                return; 
-            }
-            
-            // NEW: Check Game Over State
-            if (isGameOver) {
-                gameOver(); // Redraws the Game Over screen
-                // Continue MediaPipe loop but pause Matter.js updates
-                Engine.update(engine, 1000 / FPS); 
-                requestAnimationFrame(drawGame);
-                return;
-            }
-
-            // --- DIFFICULTY CHECK (Every 10 seconds) ---
-            const currentTime = Date.now();
-            if (lastDifficultyIncreaseTime && currentTime - lastDifficultyIncreaseTime > DIFFICULTY_STEP_TIME) {
-                // Increase difficulty only if we haven't hit the minimum interval
-                if (SPAWN_INTERVAL > MIN_SPAWN_INTERVAL) {
-                    SPAWN_INTERVAL = Math.max(MIN_SPAWN_INTERVAL, SPAWN_INTERVAL - DIFFICULTY_REDUCTION); // Reduce interval
-                    
-                    // Restart interval with the new, faster rate
-                    clearInterval(spawnIntervalId);
-                    spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL);
-                    
-                    lastDifficultyIncreaseTime = currentTime; // Reset the timer for the next step
-                    
-                    // Update Status Message
-                    statusMessage.textContent = `DIFFICULTY STEP UP! Spawn Rate: ${SPAWN_INTERVAL}ms`;
-                }
-            }
-            
-            // 1. Draw the live video feed as the background (Mirrored for user experience)
-            canvasCtx.save();
-            canvasCtx.scale(-1, 1);
-            // Translate origin to the right side of the canvas before drawing the flipped image
-            canvasCtx.translate(-CANVAS_WIDTH, 0); 
-            canvasCtx.drawImage(videoElement, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-            canvasCtx.restore(); // Restore context state
-
-            // 2. Draw Bubbles
-            canvasCtx.fillStyle = 'rgba(100, 255, 255, 0.5)'; // Light blue translucent
-            canvasCtx.strokeStyle = 'rgba(100, 255, 255, 1)';
-            canvasCtx.lineWidth = 2;
-            
-            // Iterate backwards to safely remove elements
-            for (let i = bubbles.length - 1; i >= 0; i--) {
-                const bubble = bubbles[i];
-                const x = bubble.position.x;
-                // Convert Matter.js Y (bottom-up) to Canvas Y (top-down)
-                const y = CANVAS_HEIGHT - bubble.position.y; 
-                const radius = bubble.plugin.radius;
-
-                canvasCtx.beginPath();
-                canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
-                canvasCtx.fill();
-                canvasCtx.stroke();
-            }
-            
-            // 3. Draw Hand Gestures and Check for Pops
-            popBubbleCheck(handLandmarks);
-
-            // Draw boundaries 
-            
-            // Draw the ground/floor zone (bottom) in GRAY
-            canvasCtx.fillStyle = '#4a5568';
-            canvasCtx.fillRect(0, CANVAS_HEIGHT - thickness, CANVAS_WIDTH, thickness);
-
-            // Draw the ceiling/miss zone (top) in RED 
-            canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.5)'; 
-            canvasCtx.fillRect(0, 0, CANVAS_WIDTH, thickness); 
-
-            // 4. Update Physics Engine
-            Engine.update(engine, 1000 / FPS); 
-
-            // 5. Request next frame
-            requestAnimationFrame(drawGame);
-        }
-
-        // --- Initialization and Camera ---
-        
-        function startGame() {
-            // Hide overlay elements
-            startButton.style.display = 'none';
-            gameOverlay.style.pointerEvents = 'none';
-            gameOverlay.style.backgroundColor = 'transparent';
-            
-            // Reset overlay alignment for game use
-            gameOverlay.style.justifyContent = 'center';
-            gameOverlay.style.paddingBottom = '0px';
-
-
-            // Clear any existing bubbles from the start screen
-            bubbles.forEach(bubble => Composite.remove(world, bubble));
-            bubbles = [];
-
-            // Reset scores and state
-            score = 0;
-            missedBubblesCount = 0;
-            isGameOver = false;
-            SPAWN_INTERVAL = 1500; // Reset to initial slow rate
-            scoreDisplay.textContent = `Score: 0`;
-            missedDisplay.textContent = `Missed: 0 / ${maxMissedBubbles}`;
-            statusMessage.textContent = "Camera active. Running gesture detection...";
-            
-            // Start physics and game loops
-            startTime = Date.now();
-            lastDifficultyIncreaseTime = Date.now(); // Start timer now
-            spawnIntervalId = setInterval(createBubble, SPAWN_INTERVAL);
-            isGameStarted = true;
-        }
-
-        async function startCamera() {
-            statusMessage.textContent = "Requesting camera permission...";
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    'video': {
-                        facingMode: 'user',
-                        width: { ideal: CANVAS_WIDTH },
-                        height: { ideal: CANVAS_HEIGHT }
-                    },
-                });
-                videoElement.srcObject = stream;
-                await new Promise((resolve) => {
-                    videoElement.onloadedmetadata = resolve;
-                });
-
-                // Start the MediaPipe video processing
-                videoElement.play();
-                isCameraActive = true;
-                statusMessage.textContent = "Camera active. Adjusting for start screen...";
                 
-                // Set canvas size to match video
-                canvasElement.width = CANVAS_WIDTH;
-                canvasElement.height = CANVAS_HEIGHT;
-
-                // Start the continuous drawing loop
-                drawGame(); 
-                
-                // Start MediaPipe processing on the video stream
-                sendToMediaPipe();
-                
-                // Attach start button functionality only after camera is ready
-                // Note: The button's onclick is now set in the DOMContentLoaded block
-            } catch (err) {
-                statusMessage.textContent = `Camera Error: ${err.name}. Please ensure camera access is granted.`;
-                console.error("Camera access denied or device error:", err);
+                this.prevIndexTipY = landmarks[8].y * CONFIG.CANVAS_HEIGHT;
             }
         }
-
-        async function sendToMediaPipe() {
-            if (!isCameraActive) return;
-
-            // MediaPipe requires the video stream to be constantly fed to it
-            await hands.send({ image: videoElement });
-            
-            // Schedule the next frame processing immediately
-            requestAnimationFrame(sendToMediaPipe);
-        }
-
-        // --- Entry Point ---
         
         document.addEventListener('DOMContentLoaded', () => {
-            statusMessage.textContent = "Checking library readiness...";
-            startButton.onclick = startGame; // Set button handler
-
-            // Check for MediaPipe and Matter.js readiness
-            if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
-                statusMessage.textContent = "Libraries loaded. Starting camera...";
-                // This line triggers the camera permission pop-up immediately
-                startCamera();
-            } else {
-                // Set a short delay to allow async script loading to complete
-                setTimeout(() => {
-                    if (typeof Hands !== 'undefined' && typeof Matter !== 'undefined') {
-                        statusMessage.textContent = "Libraries loaded after delay. Starting camera...";
-                        startCamera();
-                    } else {
-                        statusMessage.textContent = "Fatal Error: External libraries failed to load.";
-                    }
-                }, 100); 
-            }
+            const statusMessage = document.getElementById('status-message');
+            const updateStatus = (msg) => { statusMessage.textContent = msg; };
+            loadDependencies(updateStatus);
         });
+        
     </script>
 </body>
 </html>
