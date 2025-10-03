@@ -21,10 +21,8 @@
         }
         #game-area-container {
             position: relative;
-            width: 90vw;
-            max-width: 1400px;
-            height: 70vh;
-            min-height: 500px;
+            width: 1024px;
+            height: 576px;
             border-radius: 1rem;
             overflow: hidden; 
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
@@ -98,7 +96,7 @@
         
         <div id="game-area-container">
             <div id="milky-way-bg"></div>
-            <canvas id="three-canvas"></canvas>
+            <canvas id="three-canvas" width="1024" height="576"></canvas>
             
             <div id="ui-overlay" class="flex flex-col items-center justify-center">
                 <div id="start-screen" class="p-8 bg-gray-900 bg-opacity-90 rounded-xl shadow-2xl space-y-4">
@@ -112,9 +110,7 @@
                         </ul>
                         <p class="mt-4 text-yellow-400">Loading initial data... Please wait.</p>
                     </div>
-                    <div class="flex justify-center">
-                        <button id="start-button" class="game-button bg-green-600 hover:bg-green-700 text-white" style="display:none;">Start Game</button>
-                    </div>
+                    <button id="start-button" class="game-button bg-green-600 hover:bg-green-700 text-white" style="display:none;">Start Game</button>
                 </div>
             </div>
         </div>
@@ -154,14 +150,8 @@
         }
         
         const CONFIG = {
-            get CANVAS_WIDTH() {
-                const container = document.getElementById('game-area-container');
-                return container ? container.offsetWidth : 1024;
-            },
-            get CANVAS_HEIGHT() {
-                const container = document.getElementById('game-area-container');
-                return container ? container.offsetHeight : 576;
-            },
+            CANVAS_WIDTH: 1024,
+            CANVAS_HEIGHT: 576,
             CAMERA_DISTANCE: 35,
             GRAVITY: 0.0005,
             POP_RANGE: 2.5,
@@ -219,6 +209,7 @@
                 this.activeStars = [];
                 this.isGameOver = false;
                 this.rocketAnimationFrame = 0;
+                this.astronautVisible = false;
 
                 this.setupScene();
                 this.setupModels();
@@ -252,10 +243,14 @@
                 this.rocketModel = this.models.rocket.clone();
                 
                 this.astronautPointer.rotation.y = Math.PI;
-                this.scene.add(this.astronautPointer);
 
                 this.astronautLight = new THREE.PointLight(0xadd8e6, 10, 5);
                 this.scene.add(this.astronautLight);
+                
+                // --- MODIFICATION: Add astronaut to the scene permanently but keep it hidden initially ---
+                this.scene.add(this.astronautPointer); 
+                this.astronautPointer.visible = false;
+                // --- END MODIFICATION ---
                 
                 this.gameOverShown = false;
             }
@@ -324,6 +319,12 @@
             startGameOver() {
                 if (this.isGameOver) return;
                 this.isGameOver = true;
+                
+                // --- MODIFICATION: Only hide, do not remove from scene ---
+                this.astronautPointer.visible = false;
+                this.astronautVisible = false;
+                // --- END MODIFICATION ---
+                
                 this.activeStars.forEach(star => this.scene.remove(star));
                 this.activeStars = [];
                 
@@ -354,9 +355,12 @@
                     this.rocketModel.position.z = 0;
                     this.rocketModel.rotation.y += 0.02;
                     
-                    if (this.scene.children.includes(this.astronautPointer)) {
-                        this.scene.remove(this.astronautPointer);
+                    // --- MODIFICATION: Use visibility toggle instead of scene remove/add ---
+                    if (this.astronautVisible) {
+                        this.astronautPointer.visible = false;
+                        this.astronautVisible = false;
                     }
+                    // --- END MODIFICATION ---
                     window.app.statusUpdate("Emergency shuttle arriving from below...");
                 } 
                 else if (this.rocketAnimationFrame <= 120) { 
@@ -364,9 +368,12 @@
                     this.rocketModel.position.x = 0;
                     this.rocketModel.position.z = 0;
                     
-                    if (!this.scene.children.includes(this.astronautPointer)) {
-                        this.scene.add(this.astronautPointer);
+                    // --- MODIFICATION: Use visibility toggle instead of scene remove/add ---
+                    if (!this.astronautVisible) {
+                        this.astronautPointer.visible = true;
+                        this.astronautVisible = true;
                     }
+                    // --- END MODIFICATION ---
                     
                     this.astronautPointer.scale.set(CONFIG.ASTRONAUT_SCALE, CONFIG.ASTRONAUT_SCALE, CONFIG.ASTRONAUT_SCALE);
                     
@@ -385,9 +392,12 @@
                         window.app.statusUpdate("Astronaut boarding the shuttle...");
                     } else {
                         window.app.statusUpdate("Hatch sealed. Preparing for launch.");
-                        if (this.scene.children.includes(this.astronautPointer)) {
-                            this.scene.remove(this.astronautPointer);
+                        // --- MODIFICATION: Use visibility toggle instead of scene remove/add ---
+                        if (this.astronautVisible) {
+                            this.astronautPointer.visible = false;
+                            this.astronautVisible = false;
                         }
+                        // --- END MODIFICATION ---
                     }
                 } 
                 else { 
@@ -548,6 +558,12 @@
                 
                 this.lastDifficultyIncreaseTime = Date.now();
                 this.isGameStarted = true;
+                
+                // --- MODIFICATION: Ensure astronaut is initially not visible but ready to be shown ---
+                this.gameScene.astronautPointer.visible = false;
+                this.gameScene.astronautVisible = false;
+                // --- END MODIFICATION ---
+
                 this.statusUpdate("Game Active. Go for high score!");
             }
 
@@ -567,9 +583,12 @@
                  if (this.gameScene.scene.children.includes(this.gameScene.rocketModel)) {
                      this.gameScene.scene.remove(this.gameScene.rocketModel);
                  }
-                 if (this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
-                     this.gameScene.scene.remove(this.gameScene.astronautPointer);
+                 // --- MODIFICATION: Only hide, do not remove from scene ---
+                 if (this.gameScene.astronautPointer) {
+                     this.gameScene.astronautPointer.visible = false;
+                     this.gameScene.astronautVisible = false;
                  }
+                 // --- END MODIFICATION ---
                  
                  this.dom.startScreen.innerHTML = '';
                  this.dom.uiOverlay.style.pointerEvents = 'auto';
@@ -611,9 +630,12 @@
                 if (this.gameScene.scene.children.includes(this.gameScene.rocketModel)) {
                     this.gameScene.scene.remove(this.gameScene.rocketModel);
                 }
-                if (!this.gameScene.scene.children.includes(this.gameScene.astronautPointer)) {
-                    this.gameScene.scene.add(this.gameScene.astronautPointer);
+                // --- MODIFICATION: Only hide, do not remove from scene ---
+                if (this.gameScene.astronautPointer) {
+                    this.gameScene.astronautPointer.visible = false;
+                    this.gameScene.astronautVisible = false;
                 }
+                // --- END MODIFICATION ---
                 
                 this.score = 0;
                 this.missedBubblesCount = 0;
@@ -641,9 +663,12 @@
 
             popStarCheck(astronautPointer) {
                 if (!this.handLandmarks || this.handLandmarks.length === 0) {
-                     if (this.gameScene.scene.children.includes(astronautPointer)) {
-                         this.gameScene.scene.remove(astronautPointer);
+                     // --- MODIFICATION: Only toggle visibility, no need to remove from scene (stops flickering) ---
+                     if (this.gameScene.astronautVisible) {
+                         astronautPointer.visible = false;
+                         this.gameScene.astronautVisible = false;
                      }
+                     // --- END MODIFICATION ---
                      return;
                 }
                 
@@ -666,38 +691,42 @@
                 astronautPointer.position.copy(pointerPos);
                 this.gameScene.astronautLight.position.copy(pointerPos);
 
+                // --- MODIFICATION: Make astronaut visible and track index finger always when hand is detected (stops flickering) ---
+                if (!this.gameScene.astronautVisible) {
+                    astronautPointer.visible = true;
+                    this.gameScene.astronautVisible = true;
+                }
+                // --- END MODIFICATION ---
+
                 const isIndexExtended = landmarks[8].y < landmarks[5].y;
                 const isFist = (landmarks[12].y > landmarks[9].y && landmarks[16].y > landmarks[13].y);
                 const isPopPosture = isIndexExtended && isFist;
 
                 if (isPopPosture) {
-                    if (!this.gameScene.scene.children.includes(astronautPointer)) {
-                        this.gameScene.scene.add(astronautPointer);
-                    }
-                    
+                    // This block remains for the pop action, no flickering issue here.
                     this.gameScene.activeStars.forEach(star => {
                         if (star.userData.isPopped) return;
-            
-            const dist = star.position.distanceTo(pointerPos);
-            const TOUCH_TOLERANCE = 1.2;
-            
-            if (dist < TOUCH_TOLERANCE * star.scale.x) {
-                this.score++;
-                this.dom.score.textContent = `Score: ${this.score}`;
-                star.userData.isPopped = true;
-                
-                new TWEEN.Tween(star.scale)
-                    .to({ x: 0.01, y: 0.01, z: 0.01 }, 100)
-                    .easing(TWEEN.Easing.Quadratic.Out)
-                    .onComplete(() => {
-                        this.gameScene.scene.remove(star);
-                        this.gameScene.activeStars = this.gameScene.activeStars.filter(s => s.uuid !== star.uuid);
+                        
+                        const dist = star.position.distanceTo(pointerPos);
+                        const TOUCH_TOLERANCE = 1.2;
+                        
+                        if (dist < TOUCH_TOLERANCE * star.scale.x) {
+                            this.score++;
+                            this.dom.score.textContent = `Score: ${this.score}`;
+                            star.userData.isPopped = true;
+                            
+                            new TWEEN.Tween(star.scale)
+                                .to({ x: 0.01, y: 0.01, z: 0.01 }, 100)
+                                .easing(TWEEN.Easing.Quadratic.Out)
+                                .onComplete(() => {
+                                    this.gameScene.scene.remove(star);
+                                    this.gameScene.activeStars = this.gameScene.activeStars.filter(s => s.uuid !== star.uuid);
                     })
                     .start();
             }
         });
     } else {
-        astronautPointer.visible = false; // ✅ Hide instead of remove
+        // astronautPointer.visible = false; // Removed to keep it visible while tracking
     }
     
     this.prevIndexTipY = landmarks[8].y * CONFIG.CANVAS_HEIGHT;
